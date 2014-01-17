@@ -338,6 +338,7 @@ public class PhoneWindowManager implements WindowManagerPolicy {
     boolean mHasSoftInput = false;
     boolean mTouchExplorationEnabled = false;
     boolean mTranslucentDecorEnabled = true;
+    boolean mIsFocusPressed;
 
     int mPointerLocationMode = 0; // guarded by mLock
     int mDeviceHardwareKeys;
@@ -2552,6 +2553,12 @@ public class PhoneWindowManager implements WindowManagerPolicy {
                 }
             }
             return 0;
+        } else if (keyCode == KeyEvent.KEYCODE_CAMERA) {
+            sendCloseSystemWindows();
+            Intent intent = new Intent(Intent.ACTION_CAMERA_BUTTON, null);
+            mContext.sendOrderedBroadcastAsUser(intent, UserHandle.CURRENT_OR_SELF,
+                    null, null, null, 0, null, null);
+            return 0;
         } else if (keyCode == KeyEvent.KEYCODE_APP_SWITCH) {
             if (down) {
                 if (!mRecentAppsPreloaded && (mPressOnAppSwitchBehavior == KEY_ACTION_APP_SWITCH ||
@@ -4748,7 +4755,6 @@ public class PhoneWindowManager implements WindowManagerPolicy {
                                 Log.i(TAG, "interceptKeyBeforeQueueing:"
                                       + " CALL key-down while ringing: Answer the call!");
                                 telephonyService.answerRingingCall();
-
                                 // And *don't* pass this key thru to the current activity
                                 // (which is presumably the InCallScreen.)
                                 result &= ~ACTION_PASS_TO_USER;
@@ -4760,6 +4766,28 @@ public class PhoneWindowManager implements WindowManagerPolicy {
                 }
                 break;
             }
+
+            case KeyEvent.KEYCODE_FOCUS:
+                if (down && !isScreenOn) {
+                    if ((keyCode != KeyEvent.KEYCODE_VOLUME_UP) && (keyCode != KeyEvent.KEYCODE_VOLUME_DOWN)) {
+                        result |= ACTION_WAKE_UP;
+                    }
+                    mIsFocusPressed = true;
+                } else if (!down && isScreenOn && mIsFocusPressed) {
+                     result = (result & ~ACTION_WAKE_UP) | ACTION_GO_TO_SLEEP;
+                     mIsFocusPressed = false;
+                }
+                break;
+            case KeyEvent.KEYCODE_CAMERA:
+                if (down && mIsFocusPressed) {
+                    mIsFocusPressed = false;
+                }
+                if (down && !isScreenOn) {
+                    if ((keyCode != KeyEvent.KEYCODE_VOLUME_UP) && (keyCode != KeyEvent.KEYCODE_VOLUME_DOWN)) {
+                        result |= ACTION_WAKE_UP;
+                    }
+                }
+                break;
         }
 
         if (!isScreenOn && mOffscreenGestureSupport) {
