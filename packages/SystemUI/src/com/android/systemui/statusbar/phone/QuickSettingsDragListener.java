@@ -34,8 +34,11 @@ public class QuickSettingsDragListener implements OnDragListener {
 
         if (bottomView.getParent() instanceof QuickSettingsFlipTile) {
             bottomView = (QuickSettingsFlipTile) bottomView.getParent();
+<<<<<<< HEAD
         } else if (bottomView.getParent() instanceof QuickSettingsNetworkFlipTile) {
             bottomView = (QuickSettingsNetworkFlipTile) bottomView.getParent();
+=======
+>>>>>>> 1059023... Base: Add Battery Flip tile
         } else if (bottomView.getParent() instanceof QuickSettingsBatteryFlipTile) {
             bottomView = (QuickSettingsBatteryFlipTile) bottomView.getParent();
         }

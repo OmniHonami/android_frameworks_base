@@ -679,8 +679,13 @@ class QuickSettingsModel implements BluetoothStateChangeCallback,
         }
 
         mRingers = new ArrayList<Ringer>();
+<<<<<<< HEAD
         mAudioManager = (AudioManager) context.getSystemService(Context.AUDIO_SERVICE);
         mVibrator = (Vibrator) context.getSystemService(Context.VIBRATOR_SERVICE);
+=======
+        mAudioManager = (AudioManager) mContext.getSystemService(Context.AUDIO_SERVICE);
+        mVibrator = (Vibrator) mContext.getSystemService(Context.VIBRATOR_SERVICE);
+>>>>>>> 1059023... Base: Add Battery Flip tile
 
         IntentFilter batteryFilter = new IntentFilter();
         batteryFilter.addAction(Intent.ACTION_BATTERY_CHANGED);
@@ -790,6 +795,7 @@ class QuickSettingsModel implements BluetoothStateChangeCallback,
     }
 
     void onUsbChanged() {
+<<<<<<< HEAD
         if (DeviceUtils.deviceSupportsUsbTether(mContext)) {
             updateState();
             Resources r = mContext.getResources();
@@ -808,6 +814,23 @@ class QuickSettingsModel implements BluetoothStateChangeCallback,
                 mUsbModeState.enabled = false;
             }
             mUsbModeCallback.refreshView(mUsbModeTile, mUsbModeState);
+=======
+        updateState();
+        Resources r = mContext.getResources();
+        if (mUsbConnected && !mMassStorageActive) {
+            if (mUsbTethered) {
+                mUsbModeState.iconId = R.drawable.ic_qs_usb_tether_on;
+                mUsbModeState.label = r.getString(R.string.quick_settings_usb_tether_on_label);
+            } else {
+                mUsbModeState.iconId = R.drawable.ic_qs_usb_tether_connected;
+                mUsbModeState.label = r.getString(R.string.quick_settings_usb_tether_connected_label);
+            }
+            mUsbModeState.enabled = true;
+        } else {
+            mUsbModeState.iconId = R.drawable.ic_qs_usb_tether_off;
+            mUsbModeState.label = r.getString(R.string.quick_settings_usb_tether_off_label);
+            mUsbModeState.enabled = false;
+>>>>>>> 1059023... Base: Add Battery Flip tile
         }
     }
 
@@ -826,6 +849,7 @@ class QuickSettingsModel implements BluetoothStateChangeCallback,
     }
 
     void onTorchChanged() {
+<<<<<<< HEAD
         if (DeviceUtils.deviceSupportsTorch(mContext)) {
             Resources r = mContext.getResources();
             if (mTorchActive) {
@@ -837,6 +861,15 @@ class QuickSettingsModel implements BluetoothStateChangeCallback,
             }
             mTorchState.enabled = mTorchActive;
             mTorchCallback.refreshView(mTorchTile, mTorchState);
+=======
+        Resources r = mContext.getResources();
+        if (mTorchActive) {
+            mTorchState.iconId = R.drawable.ic_qs_torch_on;
+            mTorchState.label = r.getString(R.string.quick_settings_torch);
+        } else {
+            mTorchState.iconId = R.drawable.ic_qs_torch_off;
+            mTorchState.label = r.getString(R.string.quick_settings_torch_off);
+>>>>>>> 1059023... Base: Add Battery Flip tile
         }
     }
 
@@ -1584,6 +1617,10 @@ class QuickSettingsModel implements BluetoothStateChangeCallback,
 
     private void updateRemoteDisplays() {
         Resources r = mContext.getResources();
+<<<<<<< HEAD
+=======
+
+>>>>>>> 1059023... Base: Add Battery Flip tile
         MediaRouter.RouteInfo connectedRoute = mMediaRouter.getSelectedRoute(
                 MediaRouter.ROUTE_TYPE_REMOTE_DISPLAY);
         boolean enabled = connectedRoute != null
