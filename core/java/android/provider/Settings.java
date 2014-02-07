@@ -207,7 +207,6 @@ public final class Settings {
 
     /**
      * Activity Action: Show settings to allow configuration of Wi-Fi.
-
      * <p>
      * In some cases, a matching Activity may not exist, so ensure you
      * safeguard against this.
@@ -215,7 +214,6 @@ public final class Settings {
      * Input: Nothing.
      * <p>
      * Output: Nothing.
-
      */
     @SdkConstant(SdkConstantType.ACTIVITY_INTENT_ACTION)
     public static final String ACTION_WIFI_SETTINGS =
@@ -4074,6 +4072,18 @@ public final class Settings {
             MOVED_TO_GLOBAL.add(Settings.Global.BATTERY_SAVER_LOCATION_MODE);
             MOVED_TO_GLOBAL.add(Settings.Global.BATTERY_SAVER_WIFI_MODE);
             MOVED_TO_GLOBAL.add(Settings.Global.BATTERY_SAVER_DATA_MODE);
+            MOVED_TO_GLOBAL.add(Settings.Global.BATTERY_SAVER_SHOW_TOAST);
+            MOVED_TO_GLOBAL.add(Settings.Global.BATTERY_SAVER_NETWORK_INTERVAL_MODE);
+            MOVED_TO_GLOBAL.add(Settings.Global.BATTERY_SAVER_NOSIGNAL_MODE);
+            MOVED_TO_GLOBAL.add(Settings.Global.BATTERY_SAVER_SYNC_MODE);
+            MOVED_TO_GLOBAL.add(Settings.Global.BATTERY_SAVER_KILLALL_MODE);
+            MOVED_TO_GLOBAL.add(Settings.Global.BATTERY_SAVER_LED_MODE);
+            MOVED_TO_GLOBAL.add(Settings.Global.BATTERY_SAVER_LED_DISABLE);
+            MOVED_TO_GLOBAL.add(Settings.Global.BATTERY_SAVER_VIBRATE_MODE);
+            MOVED_TO_GLOBAL.add(Settings.Global.BATTERY_SAVER_VIBRATE_DISABLE);
+            MOVED_TO_GLOBAL.add(Settings.Global.BATTERY_SAVER_CPU_MODE);
+            MOVED_TO_GLOBAL.add(Settings.Global.BATTERY_SAVER_CPU_FREQ);
+            MOVED_TO_GLOBAL.add(Settings.Global.BATTERY_SAVER_CPU_FREQ_DEFAULT);
             MOVED_TO_GLOBAL.add(Settings.Global.BATTERY_SAVER_BRIGHTNESS_MODE);
             MOVED_TO_GLOBAL.add(Settings.Global.BATTERY_SAVER_BRIGHTNESS_LEVEL);
             MOVED_TO_GLOBAL.add(Settings.Global.BATTERY_SAVER_START);
@@ -7158,6 +7168,78 @@ public final class Settings {
          */
         public static final String BATTERY_SAVER_DATA_MODE =
                 "battery_saver_data_mode";
+
+        /**
+         * @hide
+         */
+        public static final String BATTERY_SAVER_NOSIGNAL_MODE =
+                "battery_saver_nosignal_mode";
+
+        /**
+         * @hide
+         */
+        public static final String BATTERY_SAVER_NETWORK_INTERVAL_MODE =
+                "battery_saver_network_interval_mode";
+
+        /**
+         * @hide
+         */
+        public static final String BATTERY_SAVER_SYNC_MODE =
+                "battery_saver_sync_mode";
+
+        /**
+         * @hide
+         */
+        public static final String BATTERY_SAVER_SHOW_TOAST =
+                "battery_saver_show_toast";
+
+        /**
+         * @hide
+         */
+        public static final String BATTERY_SAVER_KILLALL_MODE =
+                "battery_saver_killall_mode";
+
+        /**
+         * @hide
+         */
+        public static final String BATTERY_SAVER_LED_MODE =
+                "battery_saver_led_mode";
+
+        /**
+         * @hide
+         */
+        public static final String BATTERY_SAVER_LED_DISABLE =
+                "battery_saver_led_disable";
+
+        /**
+         * @hide
+         */
+        public static final String BATTERY_SAVER_VIBRATE_MODE =
+                "battery_saver_vibrate_mode";
+
+        /**
+         * @hide
+         */
+        public static final String BATTERY_SAVER_VIBRATE_DISABLE =
+                "battery_saver_vibrate_disable";
+
+        /**
+         * @hide
+         */
+        public static final String BATTERY_SAVER_CPU_MODE =
+                "battery_saver_cpu_mode";
+
+        /**
+         * @hide
+         */
+        public static final String BATTERY_SAVER_CPU_FREQ =
+                "battery_saver_cpu_freq";
+
+        /**
+         * @hide
+         */
+        public static final String BATTERY_SAVER_CPU_FREQ_DEFAULT =
+                "battery_saver_cpu_freq_default";
 
         /**
          * @hide

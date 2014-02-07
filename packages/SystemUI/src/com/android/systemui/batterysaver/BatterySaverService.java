@@ -15,33 +15,29 @@
  */
 package com.android.systemui.batterysaver;
 
+import android.app.Notification;
+import android.app.NotificationManager;
+import android.app.PendingIntent;
 import android.app.Service;
-import android.bluetooth.BluetoothAdapter;
-import android.bluetooth.BluetoothDevice;
 import android.content.BroadcastReceiver;
 import android.content.ContentResolver;
 import android.content.Context;
 import android.content.Intent;
 import android.content.IntentFilter;
-import android.content.pm.PackageManager;
 import android.content.res.Resources;
 import android.database.ContentObserver;
 import android.hardware.usb.UsbManager;
 import android.net.ConnectivityManager;
-import android.net.NetworkInfo;
-import android.net.TrafficStats;
-import android.net.wifi.WifiManager;
 import android.net.Uri;
-import android.os.AsyncTask;
 import android.os.BatteryManager;
 import android.os.Handler;
 import android.os.IBinder;
-import android.os.IPowerManager;
-import android.os.RemoteException;
-import android.os.ServiceManager;
+import android.os.SystemClock;
 import android.os.UserHandle;
 import android.provider.Settings;
+import android.telephony.PhoneStateListener;
 import android.telephony.TelephonyManager;
+import android.util.Log;
 import android.widget.Toast;
 
 import com.android.systemui.R;
@@ -54,72 +50,64 @@ import com.android.systemui.statusbar.policy.LocationController.LocationSettings
 import com.android.systemui.statusbar.policy.NetworkController;
 import com.android.systemui.statusbar.policy.NetworkController.NetworkSignalChangedCallback;
 import com.android.internal.widget.LockPatternUtils;
-import com.android.internal.telephony.Phone;
-
-import java.util.Set;
 
 public class BatterySaverService extends Service implements BluetoothConnectionChangeCallback,
            NetworkSignalChangedCallback, BatteryStateChangeCallback, LocationSettingsChangeCallback {
 
-    private final String TAG = "BatterySaverService";
+    public static final String TAG = "BatterySaverService";
+
+    public static final int BATTERY_SAVER_NOTIFICATION_ID = 5151;
+    public static final boolean DEBUG = false;
+
+    public enum State { UNKNOWN, NORMAL, POWER_SAVING };
 
     private Handler mHandler;
-
-    private enum State { UNKNOWN, NORMAL, POWER_SAVING };
 
     // services
     private ConnectivityManager mCM;
     private TelephonyManager mTM;
-    private IPowerManager mPM;
-    private WifiManager mWM;
-    private BluetoothAdapter mBluetoothAdapter;
+    private NotificationManager mNotificationManager;
+
+    // changing engine
+    private InCallChangeMode mInCallChangeMode;
+    private BrightnessModeChanger mBrightnessModeChanger;
     private BluetoothModeChanger mBluetoothModeChanger;
+    private CpuModeChanger mCpuModeChanger;
     private LocationModeChanger mLocationModeChanger;
+    private MobileDataModeChanger mMobileDataModeChanger;
     private NetworkModeChanger mNetworkModeChanger;
     private WifiModeChanger mWifiModeChanger;
+    private SyncModeChanger mSyncModeChanger;
+    private KillAllModeChanger mKillAllModeChanger;
+    private LedModeChanger mLedModeChanger;
+    private VibrateModeChanger mVibrateModeChanger;
 
     // user configuration
-    private int mDefaultMode;
     private int mNormalMode;
     private int mPowerSavingMode;
+    private int mLowBatteryLevel;
+    private long mUserCheckIntervalTime;
+    private boolean mSmartNoSignalEnabled;
     private boolean mBatterySaverEnabled;
     private boolean mSmartBatteryEnabled;
-    private boolean mSmartBluetoothEnabled;
-    private boolean mSmartLocationEnabled;
-    private boolean mSmartWifiEnabled;
-    private boolean mSmartBrightnessEnabled;
-    private boolean mSmartDataEnabled;
-    private boolean mIsScreenOff = false;
     private boolean mPowerSaveWhenScreenOff;
     private boolean mIgnoreWhileLocked;
-    private int mModeChangeDelay;
-    private int mBrightnessMode = -1;
-    private int mUserBrightnessLevel = -1;
-    private float mInitialBrightness = 1f;
-    private int mLowBatteryLevel;
+    private boolean mShowToast;
 
     // non-user configuration
     private Context mContext;
     private Resources mResources;
     private State mCurrentState = State.UNKNOWN;
     private SettingsObserver mSettingsObserver;
-    private long mTrafficBytes;
-    private final long TRAFFIC_BYTES_THRESHOLD = 5 * 1024 * 1024; // 5mb
-    private boolean mIsAirplaneMode = false;
-    private boolean mIsBluetoothDisabledByService = false;
-    private boolean mIsBluetoothEnabledByUser = false;
-    private boolean mIsBluetoothConnected = false;
-    private boolean mIsLocationDisabledByService = false;
-    private boolean mIsLocationEnabledByUser = false;
-    private boolean mIsWifiDisabledByService = false;
-    private boolean mIsWifiEnabledByUser = false;
-    private boolean mIsMobileDataDisabledByService = false;
-    private boolean mIsMobileDataEnabledByUser = false;
-    private boolean mIsBrightnessRestored = true;
-    private boolean mWasLocationEnabled;
-    private boolean mWasBluetoothEnabled;
-    private boolean mWasMobileDataEnabled;
-    private boolean mWasWifiEnabled;
+    private boolean mBatteryLowEvent = false;
+    private boolean mIsScreenOff = false;
+    private boolean mSignalEvent = false;
+    private boolean mWifiEvent = false;
+    private boolean mCallEvent = false;
+    private boolean mIsAirPlaneEnabled = false;
+    private long mLastNoSignalTime = 0;
+    private long mLastCheckIntervalTime = 0;
+    private final long mIntervalCheck = 300000; //5minutes
 
     // controller
     private BluetoothController mBluetoothController;
@@ -127,18 +115,7 @@ public class BatterySaverService extends Service implements BluetoothConnectionC
     private LocationController mLocationController;
     private NetworkController mNetworkController;
 
-    // user interacting value
-    private int mLocationMode;
-    private int mLocationModeByUser = 0;
-    private boolean mBatteryLowEvent = false;
-
-    // for usb state
-    private boolean mUsbTethered = false;
-    private boolean mUsbConnected = false;
-    private String[] mUsbRegexs;
-
     // For filtering ACTION_POWER_DISCONNECTED on boot
-    private boolean mIgnoreFirstPowerEvent = true;
     private boolean mPowerConnected = false;
 
     @Override
@@ -151,34 +128,42 @@ public class BatterySaverService extends Service implements BluetoothConnectionC
         // register all service needed
         mCM = (ConnectivityManager) this.getSystemService(CONNECTIVITY_SERVICE);
         mTM = (TelephonyManager) this.getSystemService(TELEPHONY_SERVICE);
-        mWM = (WifiManager) this.getSystemService(WIFI_SERVICE);
-        mPM = IPowerManager.Stub.asInterface(ServiceManager.getService(Context.POWER_SERVICE));
-        mBluetoothAdapter = BluetoothAdapter.getDefaultAdapter();
+        mNotificationManager =
+            (NotificationManager) this.getSystemService(NOTIFICATION_SERVICE);
+        mInCallChangeMode = new InCallChangeMode(this, this);
 
         // register controller
         mBatteryController = new BatteryController(this);
         mBluetoothController = new BluetoothController(this);
-        mBluetoothModeChanger = new BluetoothModeChanger(this);
         mLocationController = new LocationController(this);
-        mLocationModeChanger = new LocationModeChanger(this);
         mNetworkController = new NetworkController(this);
-        mNetworkModeChanger = new NetworkModeChanger(this);
-        mWifiModeChanger = new WifiModeChanger(this);
 
-        // initializing user configuration for battery saver mode
-        updateSettings();
+        // register changing engine
+        mBrightnessModeChanger = new BrightnessModeChanger(this);
+        mBluetoothModeChanger = new BluetoothModeChanger(this);
+        mBluetoothModeChanger.setController(mBluetoothController);
+        mCpuModeChanger = new CpuModeChanger(this);
+        mLocationModeChanger = new LocationModeChanger(this);
+        mLocationModeChanger.setController(mLocationController);
+        mMobileDataModeChanger = new MobileDataModeChanger(this);
+        mMobileDataModeChanger.setServices(mCM);
+        mNetworkModeChanger = new NetworkModeChanger(this);
+        mNetworkModeChanger.setServices(mCM, mTM);
+        mWifiModeChanger = new WifiModeChanger(this);
+        mWifiModeChanger.setServices(mCM);
+        mSyncModeChanger = new SyncModeChanger(this);
+        mKillAllModeChanger = new KillAllModeChanger(this);
+        mLedModeChanger = new LedModeChanger(this);
+        mVibrateModeChanger = new VibrateModeChanger(this);
 
         // register callback
         mBatteryController.addStateChangedCallback(this);
         mBluetoothController.addConnectionStateChangedCallback(this);
         mLocationController.addSettingsChangedCallback(this);
         mNetworkController.addNetworkSignalChangedCallback(this);
-        mDefaultMode = get2G3G();
-        mWasBluetoothEnabled = isBlueToothEnabled();
-        mWasLocationEnabled = isLocationEnabled();
-        mWasMobileDataEnabled = isMobileDataEnabled();
-        mWasWifiEnabled = isWifiEnabled();
-        mLocationMode = deviceSupportsGps() ? mLocationController.getLocationMode() : 0;
+
+        // initializing user configuration for battery saver mode
+        updateSettings();
 
         // Register settings observer and set initial preferences
         mSettingsObserver = new SettingsObserver(mHandler);
@@ -186,17 +171,24 @@ public class BatterySaverService extends Service implements BluetoothConnectionC
 
         // Register for Intent broadcasts for...
         IntentFilter filter = new IntentFilter();
-        filter.addAction(ConnectivityManager.ACTION_TETHER_STATE_CHANGED);
-        filter.addAction(Intent.ACTION_POWER_CONNECTED);
-        filter.addAction(Intent.ACTION_POWER_DISCONNECTED);
+        filter.addAction(Intent.ACTION_BATTERY_CHANGED);
         filter.addAction(Intent.ACTION_SCREEN_OFF);
         filter.addAction(Intent.ACTION_SCREEN_ON);
         filter.addAction(Intent.ACTION_USER_PRESENT);
-        filter.addAction(UsbManager.ACTION_USB_STATE);
         registerReceiver(mBroadcastReceiver, filter);
 
-        // showing a message battery saver mode running
-        Toast.makeText(mContext, mResources.getString(R.string.battery_saver_start), Toast.LENGTH_SHORT).show();
+        IntentFilter cfilter = new IntentFilter();
+        cfilter.addAction(Intent.ACTION_TIME_TICK);
+        cfilter.addAction(Intent.ACTION_TIME_CHANGED);
+        cfilter.addAction(Intent.ACTION_TIMEZONE_CHANGED);
+        registerReceiver(mIntentReceiver, cfilter);
+
+        // register phone state
+        mTM.listen(mPhoneStateListener, PhoneStateListener.LISTEN_CALL_STATE);
+        if (DEBUG) {
+            Log.i(TAG, " Running... ");
+        }
+        notifyBatterySaver();
     }
 
     @Override
@@ -243,6 +235,24 @@ public class BatterySaverService extends Service implements BluetoothConnectionC
             resolver.registerContentObserver(Settings.Global.getUriFor(
                     Settings.Global.BATTERY_SAVER_WIFI_MODE), false, this);
             resolver.registerContentObserver(Settings.Global.getUriFor(
+                    Settings.Global.BATTERY_SAVER_CPU_MODE), false, this);
+            resolver.registerContentObserver(Settings.Global.getUriFor(
+                    Settings.Global.BATTERY_SAVER_NETWORK_INTERVAL_MODE), false, this);
+            resolver.registerContentObserver(Settings.Global.getUriFor(
+                    Settings.Global.BATTERY_SAVER_NOSIGNAL_MODE), false, this);
+            resolver.registerContentObserver(Settings.Global.getUriFor(
+                    Settings.Global.BATTERY_SAVER_SYNC_MODE), false, this);
+            resolver.registerContentObserver(Settings.Global.getUriFor(
+                    Settings.Global.BATTERY_SAVER_KILLALL_MODE), false, this);
+            resolver.registerContentObserver(Settings.Global.getUriFor(
+                    Settings.Global.BATTERY_SAVER_LED_MODE), false, this);
+            resolver.registerContentObserver(Settings.Global.getUriFor(
+                    Settings.Global.BATTERY_SAVER_VIBRATE_MODE), false, this);
+            resolver.registerContentObserver(Settings.Global.getUriFor(
+                    Settings.Global.BATTERY_SAVER_SHOW_TOAST), false, this);
+            resolver.registerContentObserver(Settings.Global.getUriFor(
+                    Settings.Global.BATTERY_SAVER_CPU_FREQ), false, this);
+            resolver.registerContentObserver(Settings.Global.getUriFor(
                     Settings.Global.BATTERY_SAVER_BRIGHTNESS_MODE), false, this);
             resolver.registerContentObserver(Settings.Global.getUriFor(
                     Settings.Global.BATTERY_SAVER_BRIGHTNESS_LEVEL), false, this);
@@ -266,13 +276,15 @@ public class BatterySaverService extends Service implements BluetoothConnectionC
                          Settings.Global.BATTERY_SAVER_NORMAL_MODE))) {
                 final ContentResolver resolver = mContext.getContentResolver();
                 mNormalMode = Settings.Global.getInt(resolver,
-                         Settings.Global.BATTERY_SAVER_NORMAL_MODE, get2G3G());
+                         Settings.Global.BATTERY_SAVER_NORMAL_MODE,
+                         mNetworkModeChanger.getMode());
                 setNewModeValue(State.NORMAL, mNormalMode);
             } else if (uri != null && uri.equals(Settings.Global.getUriFor(
                          Settings.Global.BATTERY_SAVER_POWER_SAVING_MODE))) {
                 final ContentResolver resolver = mContext.getContentResolver();
                 mPowerSavingMode = Settings.Global.getInt(resolver,
-                         Settings.Global.BATTERY_SAVER_POWER_SAVING_MODE, get2G3G());
+                         Settings.Global.BATTERY_SAVER_POWER_SAVING_MODE,
+                         mNetworkModeChanger.getMode());
                 setNewModeValue(State.POWER_SAVING, mPowerSavingMode);
             } else {
                 final ContentResolver resolver = mContext.getContentResolver();
@@ -282,32 +294,47 @@ public class BatterySaverService extends Service implements BluetoothConnectionC
                         Settings.Global.BATTERY_SAVER_SCREEN_OFF, 1) != 0;
                 mIgnoreWhileLocked = Settings.Global.getInt(resolver,
                         Settings.Global.BATTERY_SAVER_IGNORE_LOCKED, 1) != 0;
-                mModeChangeDelay = Settings.Global.getInt(resolver,
-                        Settings.Global.BATTERY_SAVER_MODE_CHANGE_DELAY, 5);
+                updateDelayed(Settings.Global.getInt(resolver,
+                        Settings.Global.BATTERY_SAVER_MODE_CHANGE_DELAY, 5));
                 mSmartBatteryEnabled = Settings.Global.getInt(resolver,
                         Settings.Global.BATTERY_SAVER_BATTERY_MODE, 0) != 0;
+                mUserCheckIntervalTime = Settings.Global.getLong(resolver,
+                        Settings.Global.BATTERY_SAVER_NETWORK_INTERVAL_MODE, 0);
+                mSmartNoSignalEnabled = Settings.Global.getInt(resolver,
+                        Settings.Global.BATTERY_SAVER_NOSIGNAL_MODE, 0) != 0;
+                setShowToast(Settings.Global.getInt(resolver,
+                        Settings.Global.BATTERY_SAVER_SHOW_TOAST, 0) != 0);
                 int lowBatteryLevels = mResources.getInteger(
                         com.android.internal.R.integer.config_lowBatteryWarningLevel);
                 mLowBatteryLevel = Settings.Global.getInt(resolver,
                         Settings.Global.BATTERY_SAVER_BATTERY_LEVEL, lowBatteryLevels);
-                mSmartBluetoothEnabled = Settings.Global.getInt(resolver,
-                        Settings.Global.BATTERY_SAVER_BLUETOOTH_MODE, 0) != 0;
-                mSmartLocationEnabled = Settings.Global.getInt(resolver,
-                        Settings.Global.BATTERY_SAVER_LOCATION_MODE, 0) != 0;
-                mSmartDataEnabled = Settings.Global.getInt(resolver,
-                        Settings.Global.BATTERY_SAVER_DATA_MODE, 1) != 0;
-                mSmartWifiEnabled = Settings.Global.getInt(resolver,
-                        Settings.Global.BATTERY_SAVER_WIFI_MODE, 0) != 0;
-                mSmartBrightnessEnabled = Settings.Global.getInt(resolver,
-                        Settings.Global.BATTERY_SAVER_BRIGHTNESS_MODE, 0) != 0;
-                mInitialBrightness = Settings.Global.getInt(resolver,
-                        Settings.Global.BATTERY_SAVER_BRIGHTNESS_LEVEL, 10) / 100f;
-                int brightnessMode = Settings.System.getInt(resolver,
-                        Settings.System.SCREEN_BRIGHTNESS_MODE, -1);
-                if (mBrightnessMode != brightnessMode) {
-                    mBrightnessMode = brightnessMode;
-                    mUserBrightnessLevel = -1;
-                }
+                mBluetoothModeChanger.setModeEnabled(Settings.Global.getInt(resolver,
+                        Settings.Global.BATTERY_SAVER_BLUETOOTH_MODE, 0) != 0);
+                mCpuModeChanger.setModeEnabled(Settings.Global.getInt(resolver,
+                        Settings.Global.BATTERY_SAVER_CPU_MODE, 0) != 0);
+                mCpuModeChanger.setCpuValue(Settings.Global.getString(resolver,
+                        Settings.Global.BATTERY_SAVER_CPU_FREQ));
+                mLocationModeChanger.setModeEnabled(Settings.Global.getInt(resolver,
+                        Settings.Global.BATTERY_SAVER_LOCATION_MODE, 0) != 0);
+                mMobileDataModeChanger.setModeEnabled(Settings.Global.getInt(resolver,
+                        Settings.Global.BATTERY_SAVER_DATA_MODE, 1) != 0);
+                mWifiModeChanger.setModeEnabled(Settings.Global.getInt(resolver,
+                        Settings.Global.BATTERY_SAVER_WIFI_MODE, 0) != 0);
+                mSyncModeChanger.setModeEnabled(Settings.Global.getInt(resolver,
+                        Settings.Global.BATTERY_SAVER_SYNC_MODE, 0) != 0);
+                mKillAllModeChanger.setModeEnabled(Settings.Global.getInt(resolver,
+                        Settings.Global.BATTERY_SAVER_KILLALL_MODE, 0) != 0);
+                mLedModeChanger.setModeEnabled(Settings.Global.getInt(resolver,
+                        Settings.Global.BATTERY_SAVER_LED_MODE, 0) != 0);
+                mVibrateModeChanger.setModeEnabled(Settings.Global.getInt(resolver,
+                        Settings.Global.BATTERY_SAVER_VIBRATE_MODE, 0) != 0);
+                mBrightnessModeChanger.setModeEnabled(mSmartBatteryEnabled &&
+                        (Settings.Global.getInt(resolver,
+                        Settings.Global.BATTERY_SAVER_BRIGHTNESS_MODE, 0) != 0));
+                mBrightnessModeChanger.updateBrightnessValue(Settings.Global.getInt(resolver,
+                        Settings.Global.BATTERY_SAVER_BRIGHTNESS_LEVEL, -1));
+                mBrightnessModeChanger.updateBrightnessMode(Settings.System.getInt(resolver,
+                        Settings.System.SCREEN_BRIGHTNESS_MODE, -1));
             }
         }
     }
@@ -320,36 +347,81 @@ public class BatterySaverService extends Service implements BluetoothConnectionC
                         Settings.Global.BATTERY_SAVER_SCREEN_OFF, 1) == 1;
         mIgnoreWhileLocked = Settings.Global.getInt(resolver,
                         Settings.Global.BATTERY_SAVER_IGNORE_LOCKED, 1) == 1;
-        mModeChangeDelay = Settings.Global.getInt(resolver,
-                        Settings.Global.BATTERY_SAVER_MODE_CHANGE_DELAY, 5);
+        updateDelayed(Settings.Global.getInt(resolver,
+                        Settings.Global.BATTERY_SAVER_MODE_CHANGE_DELAY, 5));
         mNormalMode = Settings.Global.getInt(resolver,
-                         Settings.Global.BATTERY_SAVER_NORMAL_MODE, get2G3G());
+                        Settings.Global.BATTERY_SAVER_NORMAL_MODE,
+                        mNetworkModeChanger.getMode());
         mPowerSavingMode = Settings.Global.getInt(resolver,
-                         Settings.Global.BATTERY_SAVER_POWER_SAVING_MODE, get2G3G());
+                        Settings.Global.BATTERY_SAVER_POWER_SAVING_MODE,
+                        mNetworkModeChanger.getMode());
         mSmartBatteryEnabled = Settings.Global.getInt(resolver,
-                         Settings.Global.BATTERY_SAVER_BATTERY_MODE, 0) != 0;
+                        Settings.Global.BATTERY_SAVER_BATTERY_MODE, 0) != 0;
+        mUserCheckIntervalTime = Settings.Global.getLong(resolver,
+                        Settings.Global.BATTERY_SAVER_NETWORK_INTERVAL_MODE, 0);
+        mSmartNoSignalEnabled = Settings.Global.getInt(resolver,
+                        Settings.Global.BATTERY_SAVER_NOSIGNAL_MODE, 0) != 0;
+        setShowToast(Settings.Global.getInt(resolver,
+                        Settings.Global.BATTERY_SAVER_SHOW_TOAST, 0) != 0);
         int lowBatteryLevels = mResources.getInteger(
-                         com.android.internal.R.integer.config_lowBatteryWarningLevel);
+                        com.android.internal.R.integer.config_lowBatteryWarningLevel);
         mLowBatteryLevel = Settings.Global.getInt(resolver,
-                         Settings.Global.BATTERY_SAVER_BATTERY_LEVEL, lowBatteryLevels);
-        mSmartBluetoothEnabled = Settings.Global.getInt(resolver,
-                         Settings.Global.BATTERY_SAVER_BLUETOOTH_MODE, 0) != 0;
-        mSmartLocationEnabled = Settings.Global.getInt(resolver,
-                         Settings.Global.BATTERY_SAVER_LOCATION_MODE, 0) != 0;
-        mSmartDataEnabled = Settings.Global.getInt(resolver,
-                         Settings.Global.BATTERY_SAVER_DATA_MODE, 1) != 0;
-        mSmartWifiEnabled = Settings.Global.getInt(resolver,
-                         Settings.Global.BATTERY_SAVER_WIFI_MODE, 0) != 0;
-        mSmartBrightnessEnabled = Settings.Global.getInt(resolver,
-                         Settings.Global.BATTERY_SAVER_BRIGHTNESS_MODE, 0) != 0;
-        mInitialBrightness = Settings.Global.getInt(resolver,
-                         Settings.Global.BATTERY_SAVER_BRIGHTNESS_LEVEL, 50) / 100f;
-        int brightnessMode = Settings.System.getInt(resolver,
-                         Settings.System.SCREEN_BRIGHTNESS_MODE, -1);
-        if (mBrightnessMode != brightnessMode) {
-            mBrightnessMode = brightnessMode;
-            mUserBrightnessLevel = -1;
-        }
+                        Settings.Global.BATTERY_SAVER_BATTERY_LEVEL, lowBatteryLevels);
+        mBluetoothModeChanger.setModeEnabled(Settings.Global.getInt(resolver,
+                        Settings.Global.BATTERY_SAVER_BLUETOOTH_MODE, 0) != 0);
+        mCpuModeChanger.setModeEnabled(Settings.Global.getInt(resolver,
+                        Settings.Global.BATTERY_SAVER_CPU_MODE, 0) != 0);
+        mCpuModeChanger.setCpuValue(Settings.Global.getString(resolver,
+                        Settings.Global.BATTERY_SAVER_CPU_FREQ));
+        mLocationModeChanger.setModeEnabled(Settings.Global.getInt(resolver,
+                        Settings.Global.BATTERY_SAVER_LOCATION_MODE, 0) != 0);
+        mMobileDataModeChanger.setModeEnabled(Settings.Global.getInt(resolver,
+                        Settings.Global.BATTERY_SAVER_DATA_MODE, 1) != 0);
+        mWifiModeChanger.setModeEnabled(Settings.Global.getInt(resolver,
+                        Settings.Global.BATTERY_SAVER_WIFI_MODE, 0) != 0);
+        mSyncModeChanger.setModeEnabled(Settings.Global.getInt(resolver,
+                        Settings.Global.BATTERY_SAVER_SYNC_MODE, 0) != 0);
+        mKillAllModeChanger.setModeEnabled(Settings.Global.getInt(resolver,
+                        Settings.Global.BATTERY_SAVER_KILLALL_MODE, 0) != 0);
+        mLedModeChanger.setModeEnabled(Settings.Global.getInt(resolver,
+                        Settings.Global.BATTERY_SAVER_LED_MODE, 0) != 0);
+        mVibrateModeChanger.setModeEnabled(Settings.Global.getInt(resolver,
+                        Settings.Global.BATTERY_SAVER_VIBRATE_MODE, 0) != 0);
+        mBrightnessModeChanger.setModeEnabled(mSmartBatteryEnabled && (Settings.Global.getInt(resolver,
+                        Settings.Global.BATTERY_SAVER_BRIGHTNESS_MODE, 0) != 0));
+        mBrightnessModeChanger.updateBrightnessValue(Settings.Global.getInt(resolver,
+                        Settings.Global.BATTERY_SAVER_BRIGHTNESS_LEVEL, -1));
+        mBrightnessModeChanger.updateBrightnessMode(Settings.System.getInt(resolver,
+                        Settings.System.SCREEN_BRIGHTNESS_MODE, -1));
+    }
+
+    private void setShowToast(boolean enabled) {
+        mShowToast = enabled;
+        mBrightnessModeChanger.setShowToast(enabled);
+        mBluetoothModeChanger.setShowToast(enabled);
+        mCpuModeChanger.setShowToast(enabled);
+        mLocationModeChanger.setShowToast(enabled);
+        mMobileDataModeChanger.setShowToast(enabled);
+        mNetworkModeChanger.setShowToast(enabled);
+        mWifiModeChanger.setShowToast(enabled);
+        mSyncModeChanger.setShowToast(enabled);
+        mKillAllModeChanger.setShowToast(enabled);
+        mLedModeChanger.setShowToast(enabled);
+        mVibrateModeChanger.setShowToast(enabled);
+    }
+
+    private void updateDelayed(int delay) {
+        mBrightnessModeChanger.setDelayed(delay);
+        mBluetoothModeChanger.setDelayed(delay);
+        mCpuModeChanger.setDelayed(delay);
+        mLocationModeChanger.setDelayed(delay);
+        mMobileDataModeChanger.setDelayed(delay);
+        mNetworkModeChanger.setDelayed(delay);
+        mWifiModeChanger.setDelayed(delay);
+        mSyncModeChanger.setDelayed(delay);
+        mKillAllModeChanger.setDelayed(delay);
+        mLedModeChanger.setDelayed(delay);
+        mVibrateModeChanger.setDelayed(delay);
     }
 
     // broadcast receiver
@@ -357,38 +429,68 @@ public class BatterySaverService extends Service implements BluetoothConnectionC
         @Override
         public void onReceive(Context context, Intent intent) {
             String action = intent.getAction();
-            if (action.equals(Intent.ACTION_SCREEN_OFF)) {
-                if (mPowerSaveWhenScreenOff && !mPowerConnected && !isOnCall()) {
-                    switchToState(State.POWER_SAVING, true);
+            if (action.equals(Intent.ACTION_BATTERY_CHANGED)) {
+                final int status = intent.getIntExtra(BatteryManager.EXTRA_STATUS,
+                               BatteryManager.BATTERY_STATUS_UNKNOWN);
+                switch (status) {
+                        case BatteryManager.BATTERY_STATUS_CHARGING:
+                        case BatteryManager.BATTERY_STATUS_FULL:
+                             mPowerConnected = true;
+                             // on charging state
+                             if (!mIsScreenOff && shouldSwitch()) {
+                                 switchToState(State.NORMAL);
+                             }
+                             break;
+                        case BatteryManager.BATTERY_STATUS_UNKNOWN:
+                        case BatteryManager.BATTERY_STATUS_DISCHARGING:
+                        case BatteryManager.BATTERY_STATUS_NOT_CHARGING:
+                             mPowerConnected = false;
+                             break;
                 }
+            } else if (action.equals(Intent.ACTION_SCREEN_OFF)) {
                 mIsScreenOff = true;
+                if (mPowerSaveWhenScreenOff && !isTethered() && !mPowerConnected) {
+                    switchToState(State.POWER_SAVING, true, false);
+                }
             } else if (action.equals(Intent.ACTION_SCREEN_ON)) {
-                if (!mIgnoreWhileLocked && !isWifiConnected() && !mBatteryLowEvent) {
-                    switchToState(State.NORMAL);
-                } else if (!mBatteryLowEvent && mPowerSaveWhenScreenOff && isLockScreenDisabled()) {
-                    switchToState(State.NORMAL);
-                }
                 mIsScreenOff = false;
-            } else if (action.equals(Intent.ACTION_USER_PRESENT)) {
-                if (mIgnoreWhileLocked && !isWifiConnected() && !mBatteryLowEvent) {
+                if ((mPowerConnected || !mIgnoreWhileLocked
+                     || isLockScreenDisabled()) && shouldSwitch()) {
                     switchToState(State.NORMAL);
                 }
-            } else if (action.equals(Intent.ACTION_POWER_CONNECTED)) {
-                if (mIgnoreFirstPowerEvent) {
-                    mIgnoreFirstPowerEvent = false;
-                } else {
-                    mPowerConnected = true;
+            } else if (action.equals(Intent.ACTION_USER_PRESENT)) {
+                if (mIgnoreWhileLocked && shouldSwitch()) {
+                    switchToState(State.NORMAL);
                 }
-            } else if (action.equals(Intent.ACTION_POWER_DISCONNECTED)) {
-                if (mIgnoreFirstPowerEvent) {
-                    mIgnoreFirstPowerEvent = false;
-                } else {
-                    mPowerConnected = false;
+            }
+        }
+    };
+
+    private final BroadcastReceiver mIntentReceiver = new BroadcastReceiver() {
+        @Override
+        public void onReceive(Context context, Intent intent) {
+            // detect when need changing to normal state after screen turn off
+            autoSwitchAfterScreenTurnOff();
+            // detect if no signal > 5 minutes
+            // change to airplane mode
+            autoCheckNetworkMode();
+        }
+    };
+
+    private PhoneStateListener mPhoneStateListener = new PhoneStateListener() {
+        @Override
+        public void onCallStateChanged(int state, String incomingNumber) {
+            if (state != TelephonyManager.CALL_STATE_IDLE) {
+                mCallEvent = true;
+                if (DEBUG) {
+                    Log.i(TAG, " InCall detected ");
                 }
-            } else if (action.equals(UsbManager.ACTION_USB_STATE)) {
-                mUsbConnected = intent.getBooleanExtra(UsbManager.USB_CONNECTED, false);
-            } else if (action.equals(ConnectivityManager.ACTION_TETHER_STATE_CHANGED)) {
-                updateState();
+            } else if ((state == TelephonyManager.CALL_STATE_IDLE) && mCallEvent) {
+                mCallEvent = false;
+                mInCallChangeMode.callPosted();
+                if (DEBUG) {
+                    Log.i(TAG, " InCall ended ");
+                }
             }
         }
     };
@@ -397,65 +499,70 @@ public class BatterySaverService extends Service implements BluetoothConnectionC
     public void onAirplaneModeChanged(boolean enabled) {
         if (!mBatterySaverEnabled) return;
         // detect airplane mode
-        mIsAirplaneMode = enabled;
+        // if enabled, force to power saving mode
+        if (enabled && !mPowerConnected) {
+            mIsAirPlaneEnabled = enabled;
+            switchToState(State.POWER_SAVING, enabled, false);
+            if (DEBUG) {
+                Log.i(TAG, " Airplane Mode Enabled ");
+            }
+        } else if (mIsAirPlaneEnabled && !mIsScreenOff && shouldSwitch()) {
+            switchToState(State.NORMAL);
+            if (DEBUG) {
+                Log.i(TAG, " Airplane Mode Disabled ");
+            }
+        }
     }
 
     @Override
     public void onBatteryLevelChanged(int level, boolean pluggedIn) {
         if (!mBatterySaverEnabled) return;
-        // get charging condition
-        mPowerConnected = pluggedIn;
-        if (!pluggedIn && (level < mLowBatteryLevel)) {
-            mBatteryLowEvent = true;
-            if (!mIsScreenOff && !isWifiConnected() && mSmartBatteryEnabled && !isOnCall()) {
-                // battery low, power saving running
-                switchToState(State.POWER_SAVING);
-            }
-            if (mSmartBrightnessEnabled) {
-                setBrightness(mInitialBrightness);
-            }
-        } else if ((pluggedIn || (level > mLowBatteryLevel))) {
-            mBatteryLowEvent = false;
-            if (!mIgnoreWhileLocked && !mIsScreenOff && !isWifiConnected() && mSmartBatteryEnabled) {
-                // battery incharge or full, back to normal
-                switchToState(State.NORMAL);
-            }
-            if (mSmartBrightnessEnabled && !mIsBrightnessRestored) {
-                mIsBrightnessRestored = true;
-                restoreBrightness();
+        if (mSmartBatteryEnabled) {
+            if (!pluggedIn && (level < mLowBatteryLevel)) {
+                mBatteryLowEvent = true;
+                if (!mIsScreenOff && !mWifiModeChanger.isWifiConnected()) {
+                    // battery low, power saving running
+                    switchToState(State.POWER_SAVING);
+                }
+            } else if ((pluggedIn || (level > mLowBatteryLevel))) {
+                mBatteryLowEvent = false;
             }
         }
     }
 
     @Override
     public void onBluetoothConnectionChange(boolean on, boolean connected) {
-        if (!mBatterySaverEnabled || !mSmartBluetoothEnabled) {
+        if (!mBatterySaverEnabled) return;
+        if (!mBluetoothModeChanger.isSupported()) {
             // return default value
-            mWasBluetoothEnabled = false;
-            mIsBluetoothEnabledByUser = false;
+            if (mBluetoothModeChanger.isEnabledByUser()) {
+                mBluetoothModeChanger.setEnabledByUser(false);
+            }
             return;
         }
         // detect bluetooth connected into paired devices
-        mIsBluetoothConnected = connected;
+        mBluetoothModeChanger.setConnected(connected);
         // detect user interacting while power saving running
-        if (!mIsBluetoothEnabledByUser || mIsBluetoothDisabledByService) {
-            mIsBluetoothEnabledByUser = on;
+        if (mBluetoothModeChanger.isEnabledByUser() != on) {
+            mBluetoothModeChanger.setEnabledByUser(on);
         }
     }
 
     @Override
     public void onLocationSettingsChanged(boolean locationEnabled, int locationMode) {
-        if (!mBatterySaverEnabled || !mSmartLocationEnabled) {
+        if (!mBatterySaverEnabled) return;
+        if (!mLocationModeChanger.isSupported()) {
             // return default value
-            mWasLocationEnabled = false;
-            mIsLocationEnabledByUser = false;
+            if (mLocationModeChanger.isEnabledByUser()) {
+                mLocationModeChanger.setEnabledByUser(false);
+            }
             return;
         }
         // detect user interacting while power saving running
-        if (!mIsLocationEnabledByUser || mIsLocationDisabledByService) {
-            mIsLocationEnabledByUser = locationEnabled;
-            mLocationModeByUser = locationMode;
+        if (mLocationModeChanger.isEnabledByUser() != locationEnabled) {
+            mLocationModeChanger.setEnabledByUser(locationEnabled);
         }
+        mLocationModeChanger.setLocationModeByUser(locationMode);
     }
 
     @Override
@@ -463,16 +570,106 @@ public class BatterySaverService extends Service implements BluetoothConnectionC
             boolean enabled, int mobileSignalIconId, String signalContentDescription,
             int dataTypeIconId, boolean activityIn, boolean activityOut,
             String dataContentDescription,String enabledDesc) {
-        if (!mBatterySaverEnabled || !mSmartDataEnabled) {
+        if (!mBatterySaverEnabled) return;
+        mSignalEvent = enabled && (mobileSignalIconId > 0);
+        if (!mMobileDataModeChanger.isSupported()) {
             // return default value
-            mWasMobileDataEnabled = false;
-            mIsMobileDataEnabledByUser = false;
+            if (mMobileDataModeChanger.isEnabledByUser()) {
+                mMobileDataModeChanger.setEnabledByUser(false);
+            }
             return;
         }
-        // detect user interacting while power saving running
-        if (!mIsMobileDataEnabledByUser || mIsMobileDataDisabledByService) {
-            mIsMobileDataEnabledByUser = isMobileDataEnabled();
+        if (!mWifiModeChanger.isWifiConnected()) {
+            mMobileDataModeChanger.onActivity((enabled && activityIn), (enabled && activityOut));
+            mNetworkModeChanger.onActivity((enabled && activityIn), (enabled && activityOut));
+            mSyncModeChanger.onActivity((enabled && activityIn), (enabled && activityOut));
         }
+        // detect user interacting while power saving running
+        if (mMobileDataModeChanger.isEnabledByUser() != mMobileDataModeChanger.isStateEnabled()) {
+            mMobileDataModeChanger.setEnabledByUser(mMobileDataModeChanger.isStateEnabled());
+        }
+    }
+
+    private void autoSwitchAfterScreenTurnOff() {
+        if (!mMobileDataModeChanger.isSupported() || !mNetworkModeChanger.isSupported()) {
+            return;
+        }
+        if (mIsScreenOff && (mUserCheckIntervalTime != 0) && shouldSwitch()
+            && mMobileDataModeChanger.isDisabledByService()) {
+            if ((SystemClock.elapsedRealtime() - mLastCheckIntervalTime) < mUserCheckIntervalTime) {
+                return;
+            }
+            if (mLastCheckIntervalTime != 0) {
+                switchToState(State.NORMAL, true);
+                if (DEBUG) {
+                    Log.i(TAG, " change to normal mode after = " + 
+                          (SystemClock.elapsedRealtime() - mLastCheckIntervalTime));
+                }
+                mHandler.removeCallbacks(mDelayedChangeMode);
+                mHandler.postDelayed(mDelayedChangeMode, ((int) mUserCheckIntervalTime) / 2);
+            }
+            mLastCheckIntervalTime = SystemClock.elapsedRealtime();
+        } else if (!mIsScreenOff && (mLastCheckIntervalTime != 0)) {
+            mLastCheckIntervalTime = 0;
+        }
+    }
+
+    private void autoCheckNetworkMode() {
+        if (!mNetworkModeChanger.isSupported()) {
+            return;
+        }
+        if (!mSignalEvent && mSmartNoSignalEnabled && shouldSwitch()) {
+            if ((SystemClock.elapsedRealtime() - mLastNoSignalTime) < mIntervalCheck) {
+                return;
+            }
+            if (mLastNoSignalTime != 0) {
+                mHandler.removeCallbacks(mEnabledAirPlaneMode);
+                mHandler.post(mEnabledAirPlaneMode);
+            }
+            mLastNoSignalTime = SystemClock.elapsedRealtime();
+        } else if (mSignalEvent && (mLastNoSignalTime != 0)) {
+            mLastNoSignalTime = 0;
+        }
+    }
+
+    private final Runnable mEnabledAirPlaneMode = new Runnable() {
+        public void run() {
+            if (!mSignalEvent) {
+                int airplaneMode = Settings.Global.getInt(mContext.getContentResolver(),
+                      Settings.Global.AIRPLANE_MODE_ON, 0);
+                setAirplaneModeState(airplaneMode != 0);
+                if (DEBUG) {
+                    Log.i(TAG, " No signal, Airplane Mode enable ");
+                }
+                notifyBatterySaverChangeAirPlaneMode();
+            } else {
+                mHandler.removeCallbacks(mEnabledAirPlaneMode);
+            }
+        }
+    };
+
+    private final Runnable mDelayedChangeMode = new Runnable() {
+        public void run() {
+            if (mIsScreenOff && shouldSwitch()) {
+                switchToState(State.POWER_SAVING, true);
+                if (DEBUG) {
+                    Log.i(TAG, " change to power saver mode after = " +
+                          ((int) mUserCheckIntervalTime) / 2);
+                }
+            } else {
+                mHandler.removeCallbacks(mDelayedChangeMode);
+            }
+        }
+    };
+
+    private void setAirplaneModeState(boolean enabled) {
+        // Change the system setting
+        Settings.Global.putInt(mContext.getContentResolver(), Settings.Global.AIRPLANE_MODE_ON,
+                                enabled ? 1 : 0);
+        // Post the intent
+        Intent intent = new Intent(Intent.ACTION_AIRPLANE_MODE_CHANGED);
+        intent.putExtra("state", enabled);
+        mContext.sendBroadcast(intent);
     }
 
     @Override
@@ -480,127 +677,101 @@ public class BatterySaverService extends Service implements BluetoothConnectionC
             boolean activityIn, boolean activityOut,
             String wifiSignalContentDescription, String enabledDesc) {
         if (!mBatterySaverEnabled) return;
-        if (mSmartWifiEnabled) {
+        boolean wifiConnected = enabled && (wifiSignalIconId > 0) && (enabledDesc != null);
+        boolean wifiNotConnected = (wifiSignalIconId > 0) && (enabledDesc == null);
+        if (mWifiModeChanger.isModeEnabled()) {
             // detect user interacting while power saving running
-            if (!mIsWifiEnabledByUser || mIsWifiDisabledByService) {
-                mIsWifiEnabledByUser = isWifiEnabled();
+            if (mWifiModeChanger.isEnabledByUser() != mWifiModeChanger.isStateEnabled()) {
+                mWifiModeChanger.setEnabledByUser(mWifiModeChanger.isStateEnabled());
             }
         } else {
             // return default value
-            mIsWifiEnabledByUser = false;
-            mWasWifiEnabled = false;
+            if (mWifiModeChanger.isEnabledByUser()) {
+                mWifiModeChanger.setEnabledByUser(false);
+            }
         }
-        if (!mBatteryLowEvent && isWifiConnected() && !mPowerConnected && !isOnCall()) {
-            // wifi connected to AP, power saving running
-            switchToState(State.POWER_SAVING);
-        } else if (!mBatteryLowEvent && !isWifiConnected() && !(mIsScreenOff && mPowerSaveWhenScreenOff)) {
-            // wifi not connected to AP, back to normal
-            switchToState(State.NORMAL);
+        mWifiModeChanger.onActivity((enabled && activityIn), (enabled && activityOut));
+        if (!mBatteryLowEvent && !mPowerConnected) {
+            if (wifiConnected && !mWifiEvent) {
+                mWifiEvent = true;
+                // wifi connected to AP, power saving running
+                switchToState(State.POWER_SAVING);
+            } else if (wifiNotConnected && mWifiEvent &&
+                   !(mIsScreenOff && mPowerSaveWhenScreenOff)) {
+                // wifi not connected to AP, back to normal
+                switchToState(State.NORMAL);
+                mWifiEvent = false;
+            }
         }
-    }
-
-    private void updateWifiState(final boolean enable) {
-        if (mWM == null) return;
-
-        new AsyncTask<Void, Void, Void>() {
-               @Override
-               protected Void doInBackground(Void... args) {
-                   // Disable tethering if enabling Wifi
-                   final int wifiApState = mWM.getWifiApState();
-                   if (enable && ((wifiApState == WifiManager.WIFI_AP_STATE_ENABLING) ||
-                                   (wifiApState == WifiManager.WIFI_AP_STATE_ENABLED))) {
-                       mWM.setWifiApEnabled(null, false);
-                   }
-                   mWM.setWifiEnabled(enable);
-                   return null;
-               }
-        }.execute();
     }
 
     private void restoreAllState() {
+        boolean mobiledata = false;
         boolean network = false;
         boolean bluetooth = false;
         boolean location = false;
         boolean wifi = false;
         boolean brightness = false;
-        if (deviceSupportsBluetooth() && mSmartBluetoothEnabled) {
-            if (mWasBluetoothEnabled || mIsBluetoothEnabledByUser) {
-                mBluetoothAdapter.enable();
-            } else {
-                mBluetoothAdapter.disable();
-            }
+        boolean cpufreq = false;
+        boolean syncs = false;
+        boolean leds = false;
+        boolean vibes = false;
+        if (mBluetoothModeChanger.restoreState()) {
             bluetooth = true;
+            showToast(2);
         }
-        if (deviceSupportsGps() && mSmartLocationEnabled) {
-            if (mWasLocationEnabled || mIsLocationEnabledByUser) {
-                if (mLocationController.setLocationEnabled(true)) {
-                    if (mLocationModeByUser != mLocationMode) {
-                        mLocationController.setLocationMode(mLocationModeByUser);
-                    }
-                }
-            } else {
-                mLocationController.setLocationEnabled(false);
-            }
+        if (mLocationModeChanger.restoreState()) {
+            mLocationModeChanger.setLocationMode();
             location = true;
+            showToast(3);
         }
-        if (!mUsbTethered && !isWifiApEnabled()) {
-            if (deviceSupportsMobileData() && mSmartDataEnabled) {
-                if (mWasMobileDataEnabled || mIsMobileDataEnabledByUser) {
-                    mCM.setMobileDataEnabled(true);
-                } else {
-                    mCM.setMobileDataEnabled(false);
-                }
+        if (!isTethered()) {
+            if (mMobileDataModeChanger.restoreState()) {
+                mobiledata = true;
+                showToast(0);
+            }
+            if (mNetworkModeChanger.restoreState()) {
                 network = true;
+                showToast(1);
             }
-            if (mTM != null) set2G3G(mDefaultMode);
-            if (mSmartWifiEnabled) {
-                if (mWasWifiEnabled || mIsWifiEnabledByUser) {
-                    updateWifiState(true);
-                } else {
-                    updateWifiState(false);
-                }
+            if (mWifiModeChanger.restoreState()) {
                 wifi = true;
+                showToast(4);
             }
         }
-        if (mSmartBrightnessEnabled && (mPM != null)) {
-            restoreBrightness();
+        if (mBrightnessModeChanger.restoreState()) {
             brightness = true;
+            showToast(5);
         }
-        showToast(network, bluetooth, location, wifi, brightness, mResources);
+        if (mCpuModeChanger.restoreState()) {
+            cpufreq = true;
+            showToast(6);
+        }
+        if (mSyncModeChanger.restoreState()) {
+            syncs = true;
+            showToast(9);
+        }
+        if (mLedModeChanger.restoreState()) {
+            leds = true;
+            showToast(10);
+        }
+        if (mVibrateModeChanger.restoreState()) {
+            vibes = true;
+            showToast(11);
+        }
+        if (mobiledata && network && bluetooth
+            && location && wifi && brightness && cpufreq
+            && syncs && leds && vibes) {
+            showToast(7);
+        } else if (!mobiledata && !network && !bluetooth
+            && !location && !wifi && !brightness && !cpufreq
+            && !syncs && !leds && !vibes) {
+            showToast(8);
+        }
     }
 
-    private void setBrightness(float brightness) {
-        final ContentResolver resolver = mContext.getContentResolver();
-        mBrightnessMode = Settings.System.getInt(resolver, Settings.System.SCREEN_BRIGHTNESS_MODE,
-                Settings.System.SCREEN_BRIGHTNESS_MODE_AUTOMATIC);
-        if (mBrightnessMode != Settings.System.SCREEN_BRIGHTNESS_MODE_AUTOMATIC) {
-            mUserBrightnessLevel = Settings.System.getInt(resolver, Settings.System.SCREEN_BRIGHTNESS,
-                    android.os.PowerManager.BRIGHTNESS_ON);
-            final int dim = mResources.getInteger(
-                    com.android.internal.R.integer.config_screenBrightnessDim);
-            int level = (int)((android.os.PowerManager.BRIGHTNESS_ON - dim) * brightness) + dim;
-            Settings.System.putInt(resolver,
-                    Settings.System.SCREEN_BRIGHTNESS_MODE,
-                    Settings.System.SCREEN_BRIGHTNESS_MODE_MANUAL);
-            try {
-                mPM.setTemporaryScreenBrightnessSettingOverride(level);
-            } catch (RemoteException e) {
-            }
-        }
-    }
-
-    private void restoreBrightness() {
-        if (mUserBrightnessLevel < 0 || mBrightnessMode < 0
-                || mBrightnessMode == Settings.System.SCREEN_BRIGHTNESS_MODE_AUTOMATIC) {
-            return;
-        }
-        final ContentResolver resolver = mContext.getContentResolver();
-        try {
-            mPM.setTemporaryScreenBrightnessSettingOverride(mUserBrightnessLevel);
-        } catch (RemoteException e) {
-        }
-        Settings.System.putInt(resolver, Settings.System.SCREEN_BRIGHTNESS_MODE,
-                mBrightnessMode);
+    private boolean shouldSwitch() {
+        return !mWifiModeChanger.isWifiConnected() && !mBatteryLowEvent;
     }
 
     private boolean isLockScreenDisabled() {
@@ -609,136 +780,73 @@ public class BatterySaverService extends Service implements BluetoothConnectionC
         return utils.isLockScreenDisabled();
     }
 
-    private boolean deviceSupportsMobileData() {
-        return (mCM != null) ? mCM.isNetworkSupported(ConnectivityManager.TYPE_MOBILE) : false;
-    }
-
-    private boolean isMobileDataEnabled() {
-        if (!deviceSupportsMobileData()) return false;
-        return (mCM != null) ? mCM.getMobileDataEnabled() : false;
-    }
-
-    private boolean deviceSupportsWifiAp() {
-        return (mCM != null) ? (mCM.getTetherableWifiRegexs().length != 0) : false;
-    }
-
-    private boolean deviceSupportsUsbTether() {
-        return (mCM != null) ? (mCM.getTetherableUsbRegexs().length != 0) : false;
-    }
-
-    private boolean isWifiConnected() {
-        NetworkInfo network = (mCM != null) ? mCM.getNetworkInfo(ConnectivityManager.TYPE_WIFI) : null;
-        return network != null && network.isConnected();
-    }
-
-    private boolean deviceSupportsBluetooth() {
-        return mContext.getPackageManager().hasSystemFeature(PackageManager.FEATURE_LOCATION_GPS);
-    }
-
-    private boolean isBlueToothEnabled() {
-        if (!deviceSupportsBluetooth()) return false;
-        return mBluetoothAdapter.isEnabled();
-    }
-
-    private boolean isBluetoothPaired() {
-        if (!deviceSupportsBluetooth()) return false;
-        Set<BluetoothDevice> btDevices = mBluetoothController.getBondedBluetoothDevices();
-        return (btDevices.size() == 1) && mIsBluetoothConnected;
-    }
-
-    private boolean deviceSupportsGps() {
-        return mContext.getPackageManager().hasSystemFeature(PackageManager.FEATURE_LOCATION_GPS);
-    }
-
-    private boolean isLocationEnabled() {
-        if (!deviceSupportsGps()) return false;
-        return mLocationController.isLocationEnabled();
-    }
-
-    private boolean isActiveLocationRequest() {
-        if (!deviceSupportsGps()) return false;
-        return mLocationController.areActiveHighPowerLocationRequests();
+    private boolean deviceSupportsTether() {
+        return (mCM != null) ? mCM.isTetheringSupported() : false;
     }
 
     private boolean isOnCall() {
         return mTM.getCallState() != TelephonyManager.CALL_STATE_IDLE;
     }
 
-    private void updateState() {
-        if (mCM == null || !deviceSupportsUsbTether()) {
-            mUsbTethered = false;
-            return;
+    private boolean isTethered() {
+        if (mCM == null || !deviceSupportsTether()) {
+            return false;
         }
 
-        mUsbRegexs = mCM.getTetherableUsbRegexs();
-        String[] available = mCM.getTetherableIfaces();
+        String[] usbRegexs = mCM.getTetherableUsbRegexs();
+        String[] bluetoothRegexs = mCM.getTetherableBluetoothRegexs();
+        String[] wifiRegexs = mCM.getTetherableWifiRegexs();
         String[] tethered = mCM.getTetheredIfaces();
-        String[] errored = mCM.getTetheringErroredIfaces();
-        updateState(available, tethered, errored);
-    }
 
-    private void updateState(String[] available, String[] tethered,
-            String[] errored) {
-        updateUsbState(available, tethered, errored);
-    }
-
-    private void updateUsbState(String[] available, String[] tethered,
-            String[] errored) {
-        mUsbTethered = false;
         for (String s : tethered) {
-            for (String regex : mUsbRegexs) {
-                if (s.matches(regex)) mUsbTethered = true;
+            for (String regex : wifiRegexs) {
+                if (s.matches(regex)) {
+                    return true;
+                }
+            }
+            for (String regex : usbRegexs) {
+                 if (s.matches(regex)) {
+                     return true;
+                 }
+            }
+            for (String regex : bluetoothRegexs) {
+                 if (s.matches(regex)) {
+                     return true;
+                 }
             }
         }
-    }
-
-    private boolean isWifiApEnabled() {
-        if (mWM == null || !deviceSupportsWifiAp()) return false;
-
-        int state = mWM.getWifiApState();
-        switch (state) {
-                case WifiManager.WIFI_AP_STATE_ENABLING:
-                case WifiManager.WIFI_AP_STATE_ENABLED:
-                     return true;
-                case WifiManager.WIFI_AP_STATE_DISABLING:
-                case WifiManager.WIFI_AP_STATE_DISABLED:
-                     return false;
-        }
         return false;
     }
 
-    private boolean isWifiEnabled() {
-        if (mWM == null) return false;
-
-        int state = mWM.getWifiState();
-        switch (state) {
-                case WifiManager.WIFI_STATE_ENABLING:
-                case WifiManager.WIFI_STATE_ENABLED:
-                     return true;
-                case WifiManager.WIFI_STATE_DISABLING:
-                case WifiManager.WIFI_STATE_DISABLED:
-                     return false;
-        }
-        return false;
-    }
-
-    private void switchToState(State newState) {
+    public void switchToState(State newState) {
         switchToState(newState, false);
     }
 
-    private void switchToState(State newState, boolean force) {
+    public void switchToState(State newState, boolean checks) {
+        switchToState(newState, false, checks);
+    }
+
+    public void switchToState(State newState, boolean force, boolean checks) {
         if (mCurrentState == newState && !force) {
             return;
-        } else if (!mBatterySaverEnabled || isOnCall()
-                   || mUsbTethered || isWifiApEnabled() || mIsAirplaneMode) {
+        } else if (!mBatterySaverEnabled) {
+            return;
+        } else if (isOnCall()) {
             // check condition
+            if (mInCallChangeMode.getState() != newState
+                || mInCallChangeMode.isForce() != force
+                || mInCallChangeMode.isChecks() != checks) {
+                mInCallChangeMode.InCallChangeState(newState, force, checks);
+            }
             return;
         }
 
-        int networkMode = get2G3G();
+        boolean normalize = false;
+        int networkMode = mNetworkModeChanger.getMode();
         switch (newState) {
               case NORMAL:
                    networkMode = mNormalMode;
+                   normalize = true;
                    break;
               case POWER_SAVING:
                    networkMode = mPowerSavingMode;
@@ -747,89 +855,60 @@ public class BatterySaverService extends Service implements BluetoothConnectionC
                    break;
         }
         mCurrentState = newState;
-        mTrafficBytes = TrafficStats.getTotalRxBytes() + TrafficStats.getTotalTxBytes();
-        mNetworkModeChanger.changeNetworkMode(networkMode, false);
-        mBluetoothModeChanger.changeBluetoothMode(false);
-        mLocationModeChanger.changeLocationMode(false);
-        mWifiModeChanger.changeWifiMode(false);
-    }
-
-    private String getNetworkType(int state, Resources r) {
-        switch (state) {
-            case Phone.NT_MODE_GLOBAL:
-            case Phone.NT_MODE_LTE_CDMA_AND_EVDO:
-            case Phone.NT_MODE_LTE_GSM_WCDMA:
-            case Phone.NT_MODE_LTE_CMDA_EVDO_GSM_WCDMA:
-            case Phone.NT_MODE_LTE_ONLY:
-            case Phone.NT_MODE_LTE_WCDMA:
-                return r.getString(R.string.network_4G);
-            case Phone.NT_MODE_GSM_UMTS:
-                return r.getString(R.string.network_3G_auto);
-            case Phone.NT_MODE_WCDMA_ONLY:
-                return r.getString(R.string.network_3G_only);
-            case Phone.NT_MODE_EVDO_NO_CDMA:
-            case Phone.NT_MODE_CDMA_NO_EVDO:
-            case Phone.NT_MODE_GSM_ONLY:
-                return r.getString(R.string.network_2G);
-            case Phone.NT_MODE_CDMA:
-            case Phone.NT_MODE_WCDMA_PREF:
-                return r.getString(R.string.network_3G);
+        updateCurrentState(newState);
+        if ((!mWifiEvent && !checks) || (force && !checks)) {
+            if (mBrightnessModeChanger.isSupported()) {
+                mBrightnessModeChanger.changeMode(false, normalize);
+            }
+            if (mBluetoothModeChanger.isSupported()) {
+                mBluetoothModeChanger.changeMode(false, normalize);
+            }
+            if (mCpuModeChanger.isSupported()) {
+                mCpuModeChanger.changeMode(false, normalize);
+            }
+            if (mLocationModeChanger.isSupported()) {
+                mLocationModeChanger.changeMode(false, normalize);
+            }
+            if (mWifiModeChanger.isSupported()) {
+                mWifiModeChanger.updateTraffic();
+                mWifiModeChanger.changeMode(false, normalize);
+            }
+            if (mSyncModeChanger.isSupported()) {
+                mSyncModeChanger.updateTraffic();
+                mSyncModeChanger.changeMode(false, normalize);
+            }
+            if (mKillAllModeChanger.isSupported() && !mBatteryLowEvent) {
+                mKillAllModeChanger.changeMode(false, normalize);
+            }
+            if (mLedModeChanger.isSupported()) {
+                mLedModeChanger.changeMode(false, normalize);
+            }
+            if (mVibrateModeChanger.isSupported()) {
+                mVibrateModeChanger.changeMode(false, normalize);
+            }
         }
-        return r.getString(R.string.quick_settings_network_unknown);
-    }
-
-    private int get2G3G() {
-        if (!deviceSupportsMobileData()) return 0;
-        return Settings.Global.getInt(mContext.getContentResolver(),
-                    Settings.Global.PREFERRED_NETWORK_MODE, Phone.PREFERRED_NT_MODE);
-    }
-
-    private void set2G3G(int network) {
-        if (!deviceSupportsMobileData()) return;
-        Toast.makeText(mContext,
-                  mResources.getString(R.string.battery_saver_change) + " "
-                  + getNetworkType(network, mResources), Toast.LENGTH_SHORT).show();
-        switch(network) {
-            case Phone.NT_MODE_GLOBAL:
-                mTM.toggleMobileNetwork(Phone.NT_MODE_GLOBAL);
-                break;
-            case Phone.NT_MODE_CDMA_NO_EVDO:
-                mTM.toggleMobileNetwork(Phone.NT_MODE_CDMA_NO_EVDO);
-                break;
-            case Phone.NT_MODE_EVDO_NO_CDMA:
-                mTM.toggleMobileNetwork(Phone.NT_MODE_EVDO_NO_CDMA);
-                break;
-            case Phone.NT_MODE_CDMA:
-                mTM.toggleMobileNetwork(Phone.NT_MODE_CDMA);
-                break;
-            case Phone.NT_MODE_LTE_CDMA_AND_EVDO:
-                mTM.toggleMobileNetwork(Phone.NT_MODE_LTE_CDMA_AND_EVDO);
-                break;
-            case Phone.NT_MODE_LTE_CMDA_EVDO_GSM_WCDMA:
-                mTM.toggleMobileNetwork(Phone.NT_MODE_LTE_CMDA_EVDO_GSM_WCDMA);
-                break;
-            case Phone.NT_MODE_GSM_UMTS:
-                mTM.toggleMobileNetwork(Phone.NT_MODE_GSM_UMTS);
-                break;
-            case Phone.NT_MODE_WCDMA_ONLY:
-                mTM.toggleMobileNetwork(Phone.NT_MODE_WCDMA_ONLY);
-                break;
-            case Phone.NT_MODE_GSM_ONLY:
-                mTM.toggleMobileNetwork(Phone.NT_MODE_GSM_ONLY);
-                break;
-            case Phone.NT_MODE_WCDMA_PREF:
-                mTM.toggleMobileNetwork(Phone.NT_MODE_WCDMA_PREF);
-                break;
-            case Phone.NT_MODE_LTE_GSM_WCDMA:
-                mTM.toggleMobileNetwork(Phone.NT_MODE_LTE_GSM_WCDMA);
-                break;
-            case Phone.NT_MODE_LTE_ONLY:
-                mTM.toggleMobileNetwork(Phone.NT_MODE_LTE_ONLY);
-                break;
-            case Phone.NT_MODE_LTE_WCDMA:
-                mTM.toggleMobileNetwork(Phone.NT_MODE_LTE_WCDMA);
-                break;
+        if (mMobileDataModeChanger.isSupported()) {
+            mMobileDataModeChanger.updateTraffic();
+            mMobileDataModeChanger.changeMode(false, normalize);
         }
+        if (mNetworkModeChanger.isSupported()) {
+            mNetworkModeChanger.updateTraffic();
+            mNetworkModeChanger.changeModes(networkMode, false, normalize);
+        }
+    }
+
+    private void updateCurrentState(State newState) {
+        mBrightnessModeChanger.setState(newState);
+        mBluetoothModeChanger.setState(newState);
+        mCpuModeChanger.setState(newState);
+        mLocationModeChanger.setState(newState);
+        mMobileDataModeChanger.setState(newState);
+        mNetworkModeChanger.setState(newState);
+        mWifiModeChanger.setState(newState);
+        mSyncModeChanger.setState(newState);
+        mKillAllModeChanger.setState(newState);
+        mLedModeChanger.setState(newState);
+        mVibrateModeChanger.setState(newState);
     }
 
     private void setNewModeValue(State state, int mode) {
@@ -841,228 +920,56 @@ public class BatterySaverService extends Service implements BluetoothConnectionC
                 mPowerSavingMode = mode;
             }
             if (mCurrentState == state) {
-                switchToState(state, true);
+                switchToState(state, true, false);
             }
         }
     }
 
-    private void showToast(boolean network, boolean bluetooth, boolean location, boolean wifi, boolean brightness, Resources r) {
-        String what = r.getString(R.string.battery_saver_all);
-        if (network && !bluetooth && !location && !wifi && !brightness) {
-            what = r.getString(R.string.battery_saver_network);
-        } else if (!network && bluetooth && !location && !wifi && !brightness) {
-            what = r.getString(R.string.battery_saver_bluetooth);
-        } else if (!network && !bluetooth && location && !wifi && !brightness) {
-            what = r.getString(R.string.battery_saver_location);
-        } else if (!network && !bluetooth && !location && wifi && !brightness) {
-            what = r.getString(R.string.battery_saver_wifi);
-        } else if (!network && !bluetooth && !location && !wifi && brightness) {
-            what = r.getString(R.string.battery_saver_brightness);
-        }
-        Toast.makeText(mContext, what, Toast.LENGTH_SHORT).show();
-    }
+    private void showToast(int codes) {
+        if (!mShowToast) return;
 
-    // network mode
-    private class NetworkModeChanger implements Runnable {
-        private Context mContext;
-        private Handler mHandler;
-        private int mNextNetworkMode;
-        private int mCurrentNetworkMode;
-
-        public NetworkModeChanger(Context context) {
-            mContext = context;
-            mHandler = new Handler();
-            mNextNetworkMode = get2G3G();
-            mCurrentNetworkMode = get2G3G();
-        }
-
-        @Override
-        public void run() {
-            if (mNextNetworkMode == get2G3G()) return;
-            final long traffic = TrafficStats.getTotalRxBytes() + TrafficStats.getTotalTxBytes();
-            final boolean shouldDelayed = (traffic - mTrafficBytes) > TRAFFIC_BYTES_THRESHOLD;
-            if (shouldDelayed) {
-                // download/upload progress detected, delay changing mode
-                changeNetworkMode(mNextNetworkMode, true);
-                return;
-            }
-
-            if (mCurrentState == State.POWER_SAVING) {
-                if ((mWasMobileDataEnabled || mIsMobileDataEnabledByUser)
-                    && mSmartDataEnabled) {
-                    mCM.setMobileDataEnabled(false);
-                    mIsMobileDataDisabledByService = true;
-                }
-            } else if (mCurrentState == State.NORMAL) {
-                if ((mWasMobileDataEnabled || mIsMobileDataEnabledByUser)
-                    && mSmartDataEnabled) {
-                    mIsMobileDataDisabledByService = false;
-                    mCM.setMobileDataEnabled(true);
-                }
-            }
-            set2G3G(mNextNetworkMode);
-            mCurrentNetworkMode = mNextNetworkMode;
+        String what = null;
+        switch (codes) {
+                case 0:
+                    what = mResources.getString(R.string.battery_saver_data);
+                    break;
+                case 1:
+                    what = mResources.getString(R.string.battery_saver_network);
+                    break;
+                case 2:
+                    what = mResources.getString(R.string.battery_saver_bluetooth);
+                    break;
+                case 3:
+                    what = mResources.getString(R.string.battery_saver_location);
+                    break;
+                case 4:
+                    what = mResources.getString(R.string.battery_saver_wifi);
+                    break;
+                case 5:
+                    what = mResources.getString(R.string.battery_saver_brightness);
+                    break;
+                case 6:
+                    what = mResources.getString(R.string.battery_saver_cpu);
+                    break;
+                case 7:
+                    what = mResources.getString(R.string.battery_saver_all);
+                    break;
+                case 8:
+                    what = mResources.getString(R.string.battery_saver_no_changes);
+                    break;
+                case 9:
+                    what = mResources.getString(R.string.battery_saver_sync);
+                    break;
+                case 10:
+                    what = mResources.getString(R.string.battery_saver_led);
+                    break;
+                case 11:
+                    what = mResources.getString(R.string.battery_saver_vibrate);
+                    break;
         }
 
-        public void changeNetworkMode(int networkMode, boolean delayed) {
-            if (!deviceSupportsMobileData()) return;
-            mHandler.removeCallbacks(this);
-            if (networkMode == get2G3G() || networkMode == mCurrentNetworkMode) return;
-            mNextNetworkMode = networkMode;
-            if ((mModeChangeDelay == 0) && delayed) {
-                mHandler.postDelayed(this, 5000); // 5seconds
-                return;
-            }
-            if (mModeChangeDelay == 0) {
-                run();
-            } else {
-                mHandler.postDelayed(this, mModeChangeDelay * 1000);
-            }
-        }
-    }
-
-    // bluetooth mode
-    private class BluetoothModeChanger implements Runnable {
-        private Context mContext;
-        private Handler mHandler;
-
-        public BluetoothModeChanger(Context context) {
-            mContext = context;
-            mHandler = new Handler();
-        }
-
-        @Override
-        public void run() {
-            if (isBluetoothPaired()) {
-                // bluetooth has paired devices and connected, delay changing mode
-                changeBluetoothMode(true);
-                return;
-            }
-
-            if (mCurrentState == State.POWER_SAVING) {
-                if ((mWasBluetoothEnabled || mIsBluetoothEnabledByUser)
-                    && mSmartBluetoothEnabled) {
-                    mBluetoothAdapter.disable();
-                    mIsBluetoothDisabledByService = true;
-                }
-            } else if (mCurrentState == State.NORMAL) {
-                if ((mWasBluetoothEnabled || mIsBluetoothEnabledByUser)
-                    && mSmartBluetoothEnabled) {
-                    mIsBluetoothDisabledByService = false;
-                    mBluetoothAdapter.enable();
-                }
-            }
-        }
-
-        public void changeBluetoothMode(boolean delayed) {
-            if (!deviceSupportsBluetooth()) return;
-            mHandler.removeCallbacks(this);
-            if ((mModeChangeDelay == 0) && delayed) {
-                mHandler.postDelayed(this, 5000); // 5seconds
-                return;
-            }
-            if (mModeChangeDelay == 0) {
-                run();
-            } else {
-                mHandler.postDelayed(this, mModeChangeDelay * 1000);
-            }
-        }
-    }
-
-    // location mode
-    private class LocationModeChanger implements Runnable {
-        private Context mContext;
-        private Handler mHandler;
-
-        public LocationModeChanger(Context context) {
-            mContext = context;
-            mHandler = new Handler();
-        }
-
-        @Override
-        public void run() {
-            if (isActiveLocationRequest()) {
-                // high request location in progress detected, delay changing mode
-                changeLocationMode(true);
-                return;
-            }
-
-            if (mCurrentState == State.POWER_SAVING) {
-                if ((mWasLocationEnabled || mIsLocationEnabledByUser)
-                    && mSmartLocationEnabled) {
-                    mLocationController.setLocationEnabled(false);
-                    mIsLocationDisabledByService = true;
-                }
-            } else if (mCurrentState == State.NORMAL) {
-                if ((mWasLocationEnabled || mIsLocationEnabledByUser)
-                    && mSmartLocationEnabled) {
-                    mIsLocationDisabledByService = false;
-                    mLocationController.setLocationEnabled(true);
-                }
-            }
-        }
-
-        public void changeLocationMode(boolean delayed) {
-            if (!deviceSupportsGps()) return;
-            mHandler.removeCallbacks(this);
-            if ((mModeChangeDelay == 0) && delayed) {
-                mHandler.postDelayed(this, 5000); // 5seconds
-                return;
-            }
-            if (mModeChangeDelay == 0) {
-                run();
-            } else {
-                mHandler.postDelayed(this, mModeChangeDelay * 1000);
-            }
-        }
-    }
-
-    // wifi mode
-    private class WifiModeChanger implements Runnable {
-        private Context mContext;
-        private Handler mHandler;
-
-        public WifiModeChanger(Context context) {
-            mContext = context;
-            mHandler = new Handler();
-        }
-
-        @Override
-        public void run() {
-            final long traffic = TrafficStats.getTotalRxBytes() + TrafficStats.getTotalTxBytes();
-            final boolean shouldDelayed = (traffic - mTrafficBytes) > TRAFFIC_BYTES_THRESHOLD;
-            if (shouldDelayed) {
-                // download/upload progress detected, delay changing mode
-                changeWifiMode(true);
-                return;
-            }
-
-            if (mCurrentState == State.POWER_SAVING) {
-                if ((mWasWifiEnabled || mIsWifiEnabledByUser) && mSmartWifiEnabled
-                     && !isWifiConnected()) {
-                    mIsWifiDisabledByService = true;
-                    updateWifiState(false);
-                }
-            } else if (mCurrentState == State.NORMAL) {
-                if ((mWasWifiEnabled || mIsWifiEnabledByUser) && mSmartWifiEnabled
-                     && !isWifiConnected()) {
-                    mIsWifiDisabledByService = false;
-                    updateWifiState(true);
-                }
-            }
-        }
-
-        public void changeWifiMode(boolean delayed) {
-            mHandler.removeCallbacks(this);
-            if ((mModeChangeDelay == 0) && delayed) {
-                mHandler.postDelayed(this, 5000); // 5seconds
-                return;
-            }
-            if (mModeChangeDelay == 0) {
-                run();
-            } else {
-                mHandler.postDelayed(this, mModeChangeDelay * 1000);
-            }
+        if (what != null) {
+            Toast.makeText(mContext, what, Toast.LENGTH_SHORT).show();
         }
     }
 
@@ -1080,19 +987,73 @@ public class BatterySaverService extends Service implements BluetoothConnectionC
         if (mBroadcastReceiver != null) {
             unregisterReceiver(mBroadcastReceiver);
         }
-        // unregister controller
-        if (mNetworkController != null) {
-            mNetworkController.unregisterController(mContext);
+        if (mIntentReceiver != null) {
+            unregisterReceiver(mIntentReceiver);
         }
+        if (mTM != null) {
+            mTM.listen(mPhoneStateListener, PhoneStateListener.LISTEN_NONE);
+        }
+        mPhoneStateListener = null;
+        // unregister controller
         if (mBatteryController != null) {
             mBatteryController.unregisterController(mContext);
+            mBatteryController.removeStateChangedCallback(this);
         }
         if (mBluetoothController != null) {
             mBluetoothController.unregisterController(mContext);
+            mBluetoothController.removeConnectionStateChangedCallback(this);
         }
         if (mLocationController != null) {
             mLocationController.unregisterController(mContext);
+            mLocationController.removeSettingsChangedCallback(this);
+        }
+        if (mNetworkController != null) {
+            mNetworkController.unregisterController(mContext);
+            mNetworkController.removeNetworkSignalChangedCallback(this);
+        }
+        if (DEBUG) {
+            Log.i(TAG, " disabled ");
         }
         super.onDestroy();
+    }
+
+    private void notifyBatterySaver() {
+        Resources r = mContext.getResources();
+
+        Intent batIntent = new Intent();
+        batIntent.setClass(mContext, DisableBatterySaverMode.class);
+
+        Notification.Builder b = new Notification.Builder(mContext)
+            .setTicker(r.getString(R.string.battery_saver_enable_ticker))
+            .setContentTitle(r.getString(R.string.battery_saver_enable_title))
+            .setContentText(r.getString(R.string.battery_saver_start))
+            .setSmallIcon(R.drawable.ic_qs_battery_saver_on)
+            .setWhen(System.currentTimeMillis())
+            .setAutoCancel(true)
+            .addAction(R.drawable.ic_qs_battery_saver_off,
+                     r.getString(R.string.battery_saver_disable),
+                     PendingIntent.getBroadcast(mContext, 0, batIntent,
+                        PendingIntent.FLAG_CANCEL_CURRENT));
+        mNotificationManager.notify(BATTERY_SAVER_NOTIFICATION_ID, b.build());
+    }
+
+    private void notifyBatterySaverChangeAirPlaneMode() {
+        Resources r = mContext.getResources();
+
+        Intent disIntent = new Intent();
+        disIntent.setClass(mContext, AirPlaneChangeMode.class);
+
+        Notification.Builder b = new Notification.Builder(mContext)
+            .setTicker(r.getString(R.string.battery_saver_airplane_ticker))
+            .setContentTitle(r.getString(R.string.battery_saver_enable_title))
+            .setContentText(r.getString(R.string.battery_saver_airplane_text))
+            .setSmallIcon(R.drawable.ic_qs_airplane_on)
+            .setWhen(System.currentTimeMillis())
+            .setAutoCancel(true)
+            .addAction(R.drawable.ic_qs_airplane_off,
+                     r.getString(R.string.battery_saver_disable),
+                     PendingIntent.getBroadcast(mContext, 0, disIntent,
+                        PendingIntent.FLAG_CANCEL_CURRENT));
+        mNotificationManager.notify(BATTERY_SAVER_NOTIFICATION_ID, b.build());
     }
 }

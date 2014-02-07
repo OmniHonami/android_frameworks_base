@@ -282,7 +282,11 @@ public class NetworkController extends BroadcastReceiver implements DemoMode {
     }
 
     public void unregisterController(Context context) {
-        context.unregisterReceiver(this);
+        context.unregisterReceiver(this); 
+        if (mPhone != null) {
+            mPhone.listen(mPhoneStateListener, PhoneStateListener.LISTEN_NONE);
+        }
+        mPhoneStateListener = null;
     }
 
     public boolean hasMobileDataFeature() {
@@ -321,6 +325,10 @@ public class NetworkController extends BroadcastReceiver implements DemoMode {
     public void addNetworkSignalChangedCallback(NetworkSignalChangedCallback cb) {
         mSignalsChangedCallbacks.add(cb);
         notifySignalsChangedCallbacks(cb);
+    }
+
+    public void removeNetworkSignalChangedCallback(NetworkSignalChangedCallback cb) {
+        mSignalsChangedCallbacks.remove(cb);
     }
 
     public void refreshSignalCluster(SignalCluster cluster) {
