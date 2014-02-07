@@ -165,7 +165,7 @@ public class LocationController extends BroadcastReceiver {
      * Returns the actual location mode which is running
      */
     public int getLocationMode() {
-        ContentResolver resolver = mContext.getContentResolver();
+        final ContentResolver resolver = mContext.getContentResolver();
         // QuickSettings always runs as the owner, so specifically retrieve the settings
         // for the current foreground user.
         int mode = Settings.Secure.getIntForUser(resolver, Settings.Secure.LOCATION_MODE,
@@ -225,7 +225,7 @@ public class LocationController extends BroadcastReceiver {
     /**
      * Returns true if there currently exist active high power location requests.
      */
-    private boolean areActiveHighPowerLocationRequests() {
+    public boolean areActiveHighPowerLocationRequests() {
         List<AppOpsManager.PackageOps> packages
             = mAppOpsManager.getPackagesForOps(mHighPowerRequestAppOpArray);
         // AppOpsManager can return null when there is no requested data.
