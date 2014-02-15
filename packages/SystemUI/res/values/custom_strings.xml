@@ -73,8 +73,6 @@
     <string name="quick_settings_battery_health_cold">\nCold</string>
     <string name="quick_settings_battery_voltage_units">mV</string>
     <string name="quick_settings_battery_temperature_units">\u00B0 C</string>
-    <string name="quick_settings_quiethours_label">Quiet hours</string>
-    <string name="quick_settings_quiethours_off_label">Quiet hours off</string>
     <string name="quick_settings_sleep_label_back_15">15s</string>
     <string name="quick_settings_sleep_label_back_30">30s</string>
     <string name="quick_settings_sleep_label_back_60">60s</string>
