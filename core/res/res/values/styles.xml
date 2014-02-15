@@ -1438,7 +1438,7 @@ please see styles_device_defaults.xml.
 
     <style name="TextAppearance.Holo.DialogWindowTitle">
         <item name="android:textSize">22sp</item>
-        <item name="android:textColor">@android:color/holo_blue_light</item>
+        <item name="android:textColor">@color/default_dialog_text_holo_dark</item>
     </style>
 
     <style name="TextAppearance.Holo.CalendarViewWeekDayView" parent="TextAppearance.Small.CalendarViewWeekDayView">
@@ -1537,7 +1537,7 @@ please see styles_device_defaults.xml.
 
     <style name="TextAppearance.Holo.Light.DialogWindowTitle">
         <item name="android:textSize">22sp</item>
-        <item name="android:textColor">@android:color/holo_blue_light</item>
+        <item name="android:textColor">@color/default_dialog_text_holo_light</item>
     </style>
 
     <style name="TextAppearance.Holo.Light.CalendarViewWeekDayView" parent="TextAppearance.Small.CalendarViewWeekDayView">
