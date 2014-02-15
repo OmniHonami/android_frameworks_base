@@ -189,24 +189,6 @@ public class LocationController extends BroadcastReceiver {
         return setLocationMode(location);
     }
 
-    public boolean setLocationMode(int mode) {
-        int currentUserId = ActivityManager.getCurrentUser();
-        if (isUserLocationRestricted(currentUserId)) {
-            return false;
-        }
-        mLastlocationMode = mode;
-        final ContentResolver cr = mContext.getContentResolver();
-        // QuickSettings always runs as the owner, so specifically set the settings
-        // for the current foreground user.
-        return Settings.Secure
-                .putIntForUser(cr, Settings.Secure.LOCATION_MODE, mode, currentUserId);
-    }
-
-    public int getLocationMode() {
-        final ContentResolver resolver = mContext.getContentResolver();
-        return Settings.Secure.getIntForUser(resolver, Settings.Secure.LOCATION_MODE,
-                Settings.Secure.LOCATION_MODE_OFF, ActivityManager.getCurrentUser());
-    }
 
     public boolean isLocationAllowPanelCollapse() {
         ContentResolver resolver = mContext.getContentResolver();

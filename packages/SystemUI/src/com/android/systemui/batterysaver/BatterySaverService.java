@@ -55,7 +55,7 @@ import com.android.systemui.statusbar.policy.NetworkController.NetworkSignalChan
 import com.android.internal.widget.LockPatternUtils;
 import com.android.internal.telephony.Phone;
 
-public class BatterySaverService extends Service implements BluetoothStateChangeCallback,
+public abstract class BatterySaverService extends Service implements BluetoothStateChangeCallback,
            NetworkSignalChangedCallback, BatteryStateChangeCallback, LocationSettingsChangeCallback {
 
     private final String TAG = "BatterySaverService";
@@ -405,7 +405,7 @@ public class BatterySaverService extends Service implements BluetoothStateChange
     }
 
     @Override
-    public void onLocationSettingsChanged(boolean locationEnabled) {
+    public void onLocationSettingsChanged(boolean locationEnabled, int locationMode) {
         if (!mBatterySaverEnabled) return;
         if (!mIsLocationDisabledByService || !mSmartLocationEnabled) return;
 
