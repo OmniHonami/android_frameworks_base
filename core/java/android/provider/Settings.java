@@ -2439,6 +2439,12 @@ public final class Settings {
         public static final String HAPTIC_FEEDBACK_ENABLED = "haptic_feedback_enabled";
 
         /**
+         * Minimum vibration duration in milliseconds (0-100ms)
+         * @hide
+         */
+        public static final String MINIMUM_VIBRATION_DURATION = "minimum_vibration_duration";
+
+        /**
          * @deprecated Each application that shows web suggestions should have its own
          * setting for this.
          */
@@ -2774,6 +2780,13 @@ public final class Settings {
         public static final String ACTIVE_DISPLAY_EXCLUDED_APPS = "active_display_excluded_apps";
 
         /**
+         * Screen-On Notification Light,
+         * should default to 1 (yes, Notification Light is enabled when screen is on)
+         * @hide
+         */
+        public static final String SCREEN_ON_NOTIFICATION_LED = "screen_on_notification_led";
+
+        /**
          * @deprecated Use {@link android.provider.Settings.Global#LOW_BATTERY_SOUND}
          * instead
          * @hide
@@ -2944,6 +2957,136 @@ public final class Settings {
          * @hide
          */
         public static final String RECENTS_USE_OMNISWITCH = "recents_use_omniswitch";
+        
+        /**
+         *
+         * @hide
+         */
+        public static final String[] ACTIVITY_ANIMATION_CONTROLS = new String[] {
+                "activity_open",
+                "activity_close",
+                "task_open",
+                "task_close",
+                "task_to_front",
+                "task_to_back",
+                "wallpaper_open",
+                "wallpaper_close",
+                "wallpaper_intra_open",
+                "wallpaper_intra_close",
+        };
+
+        /**
+         *
+         * @hide
+         */
+        public static final String ANIMATION_CONTROLS_DURATION = "animation_controls_duration";
+
+        /**
+         *
+         * @hide
+         */
+        public static final String ANIMATION_CONTROLS_NO_SCROLL = "animation_controls_no_scroll";
+
+        /**
+         *
+         * @hide
+         */
+        public static final String ANIMATION_CONTROLS_NO_OVERRIDE = "animation_controls_no_override";
+
+        /**
+         *
+         * @hide
+         */
+        public static final String LISTVIEW_ANIMATION_CACHE = "listview_animation_cache";
+
+        /**
+         *
+         * @hide
+         */
+        public static final String LISTVIEW_ANIMATION_EXCLUDED_APPS = "listview_animation_excluded_apps";
+
+        /**
+         * ListView Animations
+         * 0 == None
+         * 1 == Wave (Left)
+         * 2 == Wave (Right)
+         * 3 == Scale
+         * 4 == Alpha
+         * 5 == Stack (Top)
+         * 6 == Stack (Bottom)
+         * 7 == Translate (Left)
+         * 8 == Translate (Right)
+         * @hide
+         */
+        public static final String LISTVIEW_ANIMATION = "listview_animation";
+
+        /**
+         * ListView Interpolators
+         * 0 == None
+         * 1 == accelerate_interpolator
+         * 2 == decelerate_interpolator
+         * 3 == accelerate_decelerate_interpolator
+         * 4 == anticipate_interpolator
+         * 5 == overshoot_interpolator
+         * 6 == anticipate_overshoot_interpolator
+         * 7 == bounce_interpolator
+         * @hide
+         */
+        public static final String LISTVIEW_INTERPOLATOR = "listview_interpolator";
+
+        /**
+         *
+         * @hide
+         */
+        public static final String LISTVIEW_DURATION = "listview_duration";
+
+        /**
+         *
+         * @hide
+         */
+        public static final String ANIMATION_IME_DURATION = "animation_ime_duration";
+
+        /**
+         *
+         * @hide
+         */
+        public static final String ANIMATION_IME_ENTER = "animation_ime_enter";
+
+        /**
+         *
+         * @hide
+         */
+        public static final String ANIMATION_IME_EXIT = "animation_ime_exit";
+
+        /**
+         *
+         * @hide
+         */
+        public static final String ANIMATION_IME_INTERPOLATOR = "animation_ime_interpolator";
+
+        /**
+         * Determine custom scroll friction.
+         * @hide
+         */
+        public static final String CUSTOM_SCROLL_FRICTION = "custom_scroll_friction";
+
+        /**
+         * Determine custom fling velocity.
+         * @hide
+         */
+        public static final String CUSTOM_FLING_VELOCITY = "custom_fling_velocity";
+
+        /**
+         * Determine custom overscroll distance.
+         * @hide
+         */
+        public static final String CUSTOM_OVERSCROLL_DISTANCE = "custom_overscroll_distance";
+
+        /**
+         * Determine custom overfling distance.
+         * @hide
+         */
+        public static final String CUSTOM_OVERFLING_DISTANCE = "custom_overfling_distance";
 
         /**
          * Immersive mode global actions switch
@@ -3866,6 +4009,22 @@ public final class Settings {
             MOVED_TO_GLOBAL.add(Settings.Global.SET_GLOBAL_HTTP_PROXY);
             MOVED_TO_GLOBAL.add(Settings.Global.DEFAULT_DNS_SERVER);
             MOVED_TO_GLOBAL.add(Settings.Global.PREFERRED_NETWORK_MODE);
+            MOVED_TO_GLOBAL.add(Settings.Global.BATTERY_SAVER_OPTION);
+            MOVED_TO_GLOBAL.add(Settings.Global.BATTERY_SAVER_NORMAL_MODE);
+            MOVED_TO_GLOBAL.add(Settings.Global.BATTERY_SAVER_POWER_SAVING_MODE);
+            MOVED_TO_GLOBAL.add(Settings.Global.BATTERY_SAVER_SCREEN_OFF);
+            MOVED_TO_GLOBAL.add(Settings.Global.BATTERY_SAVER_IGNORE_LOCKED);
+            MOVED_TO_GLOBAL.add(Settings.Global.BATTERY_SAVER_MODE_CHANGE_DELAY);
+            MOVED_TO_GLOBAL.add(Settings.Global.BATTERY_SAVER_BATTERY_MODE);
+            MOVED_TO_GLOBAL.add(Settings.Global.BATTERY_SAVER_BATTERY_LEVEL);
+            MOVED_TO_GLOBAL.add(Settings.Global.BATTERY_SAVER_BLUETOOTH_MODE);
+            MOVED_TO_GLOBAL.add(Settings.Global.BATTERY_SAVER_LOCATION_MODE);
+            MOVED_TO_GLOBAL.add(Settings.Global.BATTERY_SAVER_WIFI_MODE);
+            MOVED_TO_GLOBAL.add(Settings.Global.BATTERY_SAVER_DATA_MODE);
+            MOVED_TO_GLOBAL.add(Settings.Global.BATTERY_SAVER_BRIGHTNESS_MODE);
+            MOVED_TO_GLOBAL.add(Settings.Global.BATTERY_SAVER_BRIGHTNESS_LEVEL);
+            MOVED_TO_GLOBAL.add(Settings.Global.BATTERY_SAVER_START);
+            MOVED_TO_GLOBAL.add(Settings.Global.BATTERY_SAVER_END);
         }
 
         /** @hide */
@@ -6868,6 +7027,102 @@ public final class Settings {
          */
         public static final String PREFERRED_NETWORK_MODE =
                 "preferred_network_mode";
+
+        /**
+         * @hide
+         */
+        public static final String BATTERY_SAVER_OPTION =
+                "battery_saver_option";
+
+        /**
+         * @hide
+         */
+        public static final String BATTERY_SAVER_NORMAL_MODE =
+                "battery_saver_normal_mode";
+
+        /**
+         * @hide
+         */
+        public static final String BATTERY_SAVER_POWER_SAVING_MODE =
+                "battery_saver_power_saving_mode";
+
+        /**
+         * @hide
+         */
+        public static final String BATTERY_SAVER_SCREEN_OFF =
+                "battery_saver_screen_off";
+
+        /**
+         * @hide
+         */
+        public static final String BATTERY_SAVER_IGNORE_LOCKED =
+                "battery_saver_ignore_locked";
+
+        /**
+         * @hide
+         */
+        public static final String BATTERY_SAVER_MODE_CHANGE_DELAY =
+                "battery_saver_mode_change_delay";
+
+        /**
+         * @hide
+         */
+        public static final String BATTERY_SAVER_BATTERY_MODE =
+                "battery_saver_battery_mode";
+
+        /**
+         * @hide
+         */
+        public static final String BATTERY_SAVER_BATTERY_LEVEL =
+                "battery_saver_battery_level";
+
+        /**
+         * @hide
+         */
+        public static final String BATTERY_SAVER_BLUETOOTH_MODE =
+                "battery_saver_bluetooth_mode";
+
+        /**
+         * @hide
+         */
+        public static final String BATTERY_SAVER_LOCATION_MODE =
+                "battery_saver_location_mode";
+
+        /**
+         * @hide
+         */
+        public static final String BATTERY_SAVER_WIFI_MODE =
+                "battery_saver_wifi_mode";
+
+        /**
+         * @hide
+         */
+        public static final String BATTERY_SAVER_DATA_MODE =
+                "battery_saver_data_mode";
+
+        /**
+         * @hide
+         */
+        public static final String BATTERY_SAVER_BRIGHTNESS_MODE =
+                "battery_saver_brightness_mode";
+
+        /**
+         * @hide
+         */
+        public static final String BATTERY_SAVER_BRIGHTNESS_LEVEL =
+                "battery_saver_brightness_level";
+
+        /**
+         * @hide
+         */
+        public static final String BATTERY_SAVER_START =
+                "battery_saver_start";
+
+        /**
+         * @hide
+         */
+        public static final String BATTERY_SAVER_END =
+                "battery_saver_end";
 
         /**
          * Name of an application package to be debugged.

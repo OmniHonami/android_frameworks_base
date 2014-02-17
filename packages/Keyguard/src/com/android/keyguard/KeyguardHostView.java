@@ -1692,6 +1692,11 @@ public class KeyguardHostView extends KeyguardViewBase {
         return settingsEnabled || isTestHarness || fileOverride;
     }
 
+    public boolean handleCameraKey() {
+        showNextSecurityScreenOrFinish(false);
+        return true;
+    }
+
     public void goToWidget(int appWidgetId) {
         mAppWidgetToShow = appWidgetId;
         mSwitchPageRunnable.run();

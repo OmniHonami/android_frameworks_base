@@ -16,6 +16,9 @@
 
 -->
 <resources xmlns:xliff="urn:oasis:names:tc:xliff:document:1.2">
+    <!-- Title shown in recents popup for adding an application to the split view -->
+    <string name="status_bar_recent_add_to_split_view">Put aside</string>
+
     <!-- Quick Settings Wi-Fi Back Tile Tethering label -->
     <string name="quick_settings_wifi_tethering_label">Tethering</string>
 
@@ -61,6 +64,15 @@
     <string name="network_3G">2G/3G Pref</string>
     <string name="network_2G">2G Only</string>
 
+    <string name="quick_settings_battery_health_unknown">\nUnknown</string>
+    <string name="quick_settings_battery_health_good">\nGood</string>
+    <string name="quick_settings_battery_health_overheat">\nOverheat</string>
+    <string name="quick_settings_battery_health_dead">\nDead</string>
+    <string name="quick_settings_battery_health_over_voltage">\nOver voltage</string>
+    <string name="quick_settings_battery_health_unspecified_failure">\nUnknown error</string>
+    <string name="quick_settings_battery_health_cold">\nCold</string>
+    <string name="quick_settings_battery_voltage_units">mV</string>
+    <string name="quick_settings_battery_temperature_units">\u00B0 C</string>
     <string name="quick_settings_sleep_label_back_15">15s</string>
     <string name="quick_settings_sleep_label_back_30">30s</string>
     <string name="quick_settings_sleep_label_back_60">60s</string>
@@ -92,8 +104,18 @@
     <string name="quick_settings_usb_tether_off_label">Disconnected</string>
     <string name="quick_settings_usb_tether_connected_label">Tethering off</string>
     <string name="quick_settings_usb_tether_on_label">Tethering</string>
-
     <string name="status_bar_notification_hide_icon_packages">Hide app\'s notification icon(s)</string>
+
+    <!-- battery saver mode -->
+    <string name="battery_saver_start">Battery Saver Enabled</string>
+    <string name="battery_saver_stop">Battery Saver Disabled</string>
+    <string name="battery_saver_change">Battery Saver Change network to</string>
+    <string name="battery_saver_network">Network restored</string>
+    <string name="battery_saver_brightness">Screen Brightness restored</string>
+    <string name="battery_saver_bluetooth">Bluetooth restored</string>
+    <string name="battery_saver_location">Gps restored</string>
+    <string name="battery_saver_wifi">Wifi restored</string>
+    <string name="battery_saver_all">All configuration restored</string>
 
     <!-- Dialog title for navigation bar button selection -->
     <string name="navbar_dialog_title">Choose action to assign</string>
@@ -105,5 +127,4 @@
     <string name="navbar_menu_conditional_button">Menu (autoHide) button</string>
     <string name="navbar_menu_always_button">Menu (alwaysShow) button</string>
     <string name="navbar_menu_big_button">Menu button</string>
-
 </resources>
