@@ -27,7 +27,7 @@ import android.view.MotionEvent;
 import android.view.View;
 import android.widget.FrameLayout;
 
-class QuickSettingsBatteryFlipTile extends QuickSettingsTileView {
+public class QuickSettingsBatteryFlipTile extends QuickSettingsTileView {
 
     private final QuickSettingsBasicBatteryTile mFront;
     private final QuickSettingsBasicBackBatteryTile mBack;
@@ -103,7 +103,12 @@ class QuickSettingsBatteryFlipTile extends QuickSettingsTileView {
     public void setTextSizes(int size) {
         mBack.setTextSizes(size);
         mFront.setTextSizes(size);
-        super.setTextSizes(size);
+    }
+
+    @Override
+    public void callOnColumnsChange() {
+        mBack.callOnColumnsChange();
+        mFront.callOnColumnsChange();
     }
 
     public void setFrontOnClickListener(View.OnClickListener listener) {

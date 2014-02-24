@@ -2563,13 +2563,14 @@ public final class Settings {
         public static final String BATTERY_LIGHT_REALLY_FULL_COLOR = "battery_light_really_full_color";
 
         /**
-         * Network speed indicator
-         * 0 = disabled
-         * 1 = show bits per second
-         * 2 = show Bytes per second
+         * Network traffic indicator, goes from least to greatest significant bitwise
+         * 0 = Display up-stream traffic if set
+         * 1 = Display down-stream traffic if set
+         * 2 = Show as Byte/s if set
+         * 16-31 = Refresh interval(ms)  min: 250  max: 32750  default: 1000
          * @hide
          */
-        public static final String STATUS_BAR_TRAFFIC = "status_bar_traffic";
+        public static final String NETWORK_TRAFFIC_STATE = "network_traffic_state";
 
         /**
          * Show Screenshot in Power Menu
@@ -2767,6 +2768,12 @@ public final class Settings {
         public static final String ACTIVE_DISPLAY_THRESHOLD = "active_display_threshold";
 
         /**
+         * use Active display content view instead default one.
+         * @hide
+         */
+        public static final String ACTIVE_DISPLAY_CONTENT = "active_display_content";
+
+        /**
          * Timeout of the display when there is no user interaction
          * @hide
          */
@@ -2785,6 +2792,20 @@ public final class Settings {
          * @hide
          */
         public static final String SCREEN_ON_NOTIFICATION_LED = "screen_on_notification_led";
+
+        /**
+         * A list of packages to exclude from being message displayed in active display.
+         * This should be a string of packages separated by |
+         * @hide
+         */
+        public static final String ACTIVE_DISPLAY_PRIVACY_APPS = "active_display_privacy_apps";
+
+        /**
+         * allow bypass active display when lockscreen isSecure
+         * and there is no notifications
+         * @hide
+         */
+        public static final String ACTIVE_DISPLAY_BYPASS = "active_display_bypass";
 
         /**
          * @deprecated Use {@link android.provider.Settings.Global#LOW_BATTERY_SOUND}
@@ -4406,6 +4427,12 @@ public final class Settings {
          */
         @Deprecated
         public static final String ADB_ENABLED = Global.ADB_ENABLED;
+
+        /**
+         * The hostname for this device
+         * @hide
+         */
+        public static final String DEVICE_HOSTNAME = "device_hostname";
 
         /**
          * The TCP/IP port to run ADB on, or -1 for USB

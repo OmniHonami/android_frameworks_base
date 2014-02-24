@@ -173,7 +173,6 @@ public class LocationController extends BroadcastReceiver {
         return mode;
     }
 
-
     public boolean setBackLocationEnabled(int location) {
         switch (location) {
             case Settings.Secure.LOCATION_MODE_SENSORS_ONLY:
@@ -188,7 +187,6 @@ public class LocationController extends BroadcastReceiver {
         }
         return setLocationMode(location);
     }
-
 
     public boolean isLocationAllowPanelCollapse() {
         ContentResolver resolver = mContext.getContentResolver();

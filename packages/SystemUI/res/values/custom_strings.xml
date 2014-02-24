@@ -21,6 +21,7 @@
 
     <!-- Quick Settings Wi-Fi Back Tile Tethering label -->
     <string name="quick_settings_wifi_tethering_label">Tethering</string>
+    <string name="quick_settings_wifi_tethering_off_label">Tethering Off</string>
 
     <!-- Quick Settings Bluetooth Not Discoverable label -->
     <string name="quick_settings_bluetooth_not_discoverable_label">Not discoverable</string>
@@ -29,6 +30,7 @@
     <string name="quick_settings_bluetooth_discoverable_label">Discoverable</string>
 
     <!-- Quick Settings Bluetooth Not Connected -->
+    <string name="quick_settings_bluetooth_enabled">Enabled</string>
     <string name="quick_settings_bluetooth_disabled">Disabled</string>
 
     <!-- Quick Settings Bluetooth Number of Paired Devices -->
@@ -48,6 +50,9 @@
 
     <!-- Screen record notification error title -->
     <string name="screenrecord_notif_error">Unable to record screen</string>
+
+    <!-- Active Display -->
+    <string name="active_display_privacy_content">Content message not showing because privacy mode enabled</string>
 
     <!-- QS Battery Tile -->
     <string name="quick_settings_battery_charging">Charging</string>
