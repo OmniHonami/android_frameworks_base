@@ -108,6 +108,16 @@ public class CamcorderProfile
      * {@hide}
      */
     public static final int QUALITY_WQVGA = 11;
+    
+    /**
+    * {@hide}
+    */
+    public static final int QUALITY_4kUHD = 12;
+
+    /**
+    * {@hide}
+    */
+    public static final int QUALITY_4kDCI = 13;
 
     // Start and end of quality list
     private static final int QUALITY_LIST_START = QUALITY_LOW;
