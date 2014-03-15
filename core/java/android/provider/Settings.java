@@ -2695,6 +2695,12 @@ public final class Settings {
         public static final String LOCKSCREEN_SEE_THROUGH = "lockscreen_see_through";
 
         /**
+         * Allows setting the radius for blur
+         * @hide
+         */
+        public static final String LOCKSCREEN_BLUR_RADIUS = "lockscreen_blur_radius";
+
+        /**
          * Whether to display notifications on screen when screen is off
          * @hide
          */
@@ -2806,6 +2812,26 @@ public final class Settings {
          * @hide
          */
         public static final String ACTIVE_DISPLAY_BYPASS = "active_display_bypass";
+
+        /**
+         * Whether to not showing active display when there is annoying notifications.
+         * @hide
+         */
+        public static final String ACTIVE_DISPLAY_ANNOYING = "active_display_annoying";
+
+        /**
+         * double tap every where to sleep on active display.
+         * @hide
+         */
+        public static final String ACTIVE_DISPLAY_DOUBLE_TAP = "active_display_double_tap";
+
+        /**
+         * Screen-On Notification Light
+         * 0 - disable, default
+         * 1 - enable
+         * @hide
+         */
+        public static final String SCREEN_ON_NOTIFICATION_LED = "screen_on_notification_led";
 
         /**
          * @deprecated Use {@link android.provider.Settings.Global#LOW_BATTERY_SOUND}

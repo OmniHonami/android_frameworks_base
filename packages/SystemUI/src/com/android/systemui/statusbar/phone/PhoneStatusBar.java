@@ -99,6 +99,7 @@ import android.widget.TextView;
 import com.android.internal.statusbar.StatusBarIcon;
 import com.android.systemui.BatteryMeterView;
 import com.android.systemui.BatteryCircleMeterView;
+import com.android.systemui.BatteryPercentMeterView;
 import com.android.systemui.DemoMode;
 import com.android.systemui.EventLogTags;
 import com.android.systemui.R;
@@ -223,6 +224,7 @@ public class PhoneStatusBar extends BaseStatusBar implements DemoMode {
 
     private BatteryMeterView mBattery;
     private BatteryCircleMeterView mCircleBattery;
+    private BatteryPercentMeterView mPercentBattery;
 
     // expanded notifications
     NotificationPanelView mNotificationPanel; // the sliding/resizing panel within the notification window
@@ -298,6 +300,8 @@ public class PhoneStatusBar extends BaseStatusBar implements DemoMode {
 
     private float mScreenWidth;
     private int mMinBrightness;
+    private int mPeekHeight;
+    private boolean mJustPeeked;
     int mLinger;
     int mInitialTouchX;
     int mInitialTouchY;
@@ -468,9 +472,10 @@ public class PhoneStatusBar extends BaseStatusBar implements DemoMode {
         if (mQS != null) {
             mQS.updateBattery();
         }
-        if (mBattery != null && mCircleBattery != null) {
+        if (mBattery != null && mCircleBattery != null && mPercentBattery != null) {
             mBattery.updateSettings();
             mCircleBattery.updateSettings();
+            mPercentBattery.updateSettings();
         }
     }
 
@@ -863,6 +868,7 @@ public class PhoneStatusBar extends BaseStatusBar implements DemoMode {
 
         mBattery = (BatteryMeterView) mStatusBarView.findViewById(R.id.battery);
         mCircleBattery = (BatteryCircleMeterView) mStatusBarView.findViewById(R.id.circle_battery);
+        mPercentBattery = (BatteryPercentMeterView) mStatusBarView.findViewById(R.id.percent_battery);
 
         return mStatusBarView;
     }
@@ -2185,47 +2191,44 @@ public class PhoneStatusBar extends BaseStatusBar implements DemoMode {
         }
     }
 
-    private void brightnessControl(MotionEvent event)
-    {
-        if (mBrightnessControl)
-        {
-            final int action = event.getAction();
-            final int x = (int)event.getRawX();
-            final int y = (int)event.getRawY();
-            if (action == MotionEvent.ACTION_DOWN) {
+    private void brightnessControl(MotionEvent event) {
+        final int action = event.getAction();
+        final int x = (int) event.getRawX();
+        final int y = (int) event.getRawY();
+        if (action == MotionEvent.ACTION_DOWN) {
+            if (y < mNotificationHeaderHeight) {
                 mLinger = 0;
                 mInitialTouchX = x;
                 mInitialTouchY = y;
+                mJustPeeked = true;
                 mHandler.removeCallbacks(mLongPressBrightnessChange);
-                if (y < mNotificationHeaderHeight) {
-                    mHandler.postDelayed(mLongPressBrightnessChange,
-                            BRIGHTNESS_CONTROL_LONG_PRESS_TIMEOUT);
-                }
-            } else if (action == MotionEvent.ACTION_MOVE) {
-                if (y < mNotificationHeaderHeight) {
-                    mVelocityTracker.computeCurrentVelocity(1000);
-                    float yVel = mVelocityTracker.getYVelocity();
-                    yVel = Math.abs(yVel);
-                    if (yVel < 50.0f) {
-                        if (mLinger > BRIGHTNESS_CONTROL_LINGER_THRESHOLD) {
-                            adjustBrightness(x);
-                        } else {
-                            mLinger++;
-                        }
+                mHandler.postDelayed(mLongPressBrightnessChange,
+                        BRIGHTNESS_CONTROL_LONG_PRESS_TIMEOUT);
+            }
+        } else if (action == MotionEvent.ACTION_MOVE) {
+            if (y < mNotificationHeaderHeight && mJustPeeked) {
+                if (mLinger > BRIGHTNESS_CONTROL_LINGER_THRESHOLD) {
+                    adjustBrightness(x);
+                } else {
+                    final int xDiff = Math.abs(x - mInitialTouchX);
+                    final int yDiff = Math.abs(y - mInitialTouchY);
+                    final int touchSlop = ViewConfiguration.get(mContext).getScaledTouchSlop();
+                    if (xDiff > yDiff) {
+                        mLinger++;
                     }
-                    int touchSlop = ViewConfiguration.get(mContext).getScaledTouchSlop();
-                    if (Math.abs(x - mInitialTouchX) > touchSlop ||
-                            Math.abs(y - mInitialTouchY) > touchSlop) {
+                    if (xDiff > touchSlop || yDiff > touchSlop) {
                         mHandler.removeCallbacks(mLongPressBrightnessChange);
                     }
-                } else {
-                    mHandler.removeCallbacks(mLongPressBrightnessChange);
                 }
-            } else if (action == MotionEvent.ACTION_UP
-                    || action == MotionEvent.ACTION_CANCEL) {
+            } else {
+                if (y > mPeekHeight) {
+                    mJustPeeked = false;
+                }
                 mHandler.removeCallbacks(mLongPressBrightnessChange);
-                mLinger = 0;
             }
+        } else if (action == MotionEvent.ACTION_UP
+                || action == MotionEvent.ACTION_CANCEL) {
+            mHandler.removeCallbacks(mLongPressBrightnessChange);
         }
     }
 
@@ -2254,6 +2257,13 @@ public class PhoneStatusBar extends BaseStatusBar implements DemoMode {
             mGestureRec.add(event);
         }
 
+        if (mBrightnessControl) {
+            brightnessControl(event);
+            if ((mDisabled & StatusBarManager.DISABLE_EXPAND) != 0) {
+                return true;
+            }
+        }
+
         if (mStatusBarWindowState == WINDOW_STATE_SHOWING) {
             final boolean upOrCancel =
                     event.getAction() == MotionEvent.ACTION_UP ||
@@ -2264,9 +2274,6 @@ public class PhoneStatusBar extends BaseStatusBar implements DemoMode {
                 setInteracting(StatusBarManager.WINDOW_STATUS_BAR, true);
             }
         }
-
-        brightnessControl(event);
-
         return false;
     }
 
@@ -3222,7 +3229,7 @@ public class PhoneStatusBar extends BaseStatusBar implements DemoMode {
 
         mCarrierLabelHeight = res.getDimensionPixelSize(R.dimen.carrier_label_height);
         mNotificationHeaderHeight = res.getDimensionPixelSize(R.dimen.notification_panel_header_height);
-
+        mPeekHeight = res.getDimensionPixelSize(R.dimen.peek_height);
         mNotificationPanelMinHeightFrac = res.getFraction(R.dimen.notification_panel_min_height_frac, 1, 1);
         if (mNotificationPanelMinHeightFrac < 0f || mNotificationPanelMinHeightFrac > 1f) {
             mNotificationPanelMinHeightFrac = 0f;
